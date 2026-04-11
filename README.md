@@ -185,6 +185,8 @@ action:
 
 ### Renew individual loans and notify results
 
+instead of using renew_all you can also loop through all available loans manually
+
 ```yaml
 alias: "Renew individual loans"
 trigger:
@@ -209,6 +211,35 @@ action:
               {% if result.success %}✅ Verlängert{% else %}❌ Fehlgeschlagen{% endif %}
             message: >
               {{ repeat.item.title }}{% if result.error %} — {{ result.error }}{% endif %}
+```
+
+### Warn about non-renewable loans due soon
+
+Notify about loans that are due within 7 days but cannot be renewed anymore — these must be returned in person.
+
+```yaml
+alias: "Non-renewable loans due soon"
+trigger:
+  - platform: time
+    at: "09:00:00"
+condition:
+  - condition: template
+    value_template: >
+      {{ state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
+         | selectattr('days_remaining', 'lt', 7)
+         | rejectattr('can_be_renewed')
+         | list | count > 0 }}
+action:
+  - service: notify.mobile_app
+    data:
+      title: "Rückgabe nötig!"
+      message: >
+        Folgende Medien sind bald fällig und können nicht verlängert werden:
+        {% for loan in state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
+           | selectattr('days_remaining', 'lt', 7)
+           | rejectattr('can_be_renewed') %}
+        - {{ loan.title }} — fällig {{ loan.due_date }} ({{ loan.days_remaining }} Tage)
+        {% endfor %}
 ```
 
 ## Development
