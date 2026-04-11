@@ -227,4 +227,6 @@ nix build .#checks.x86_64-linux.vm-test
 
 ## License
 
-Inspired by [bibliotheek_be](https://github.com/myTselworern/bibliotheek_be) by @myTselection.
+MIT License. See [LICENSE](LICENSE) for details.
+
+Inspired by [bibliotheek_be](https://github.com/myTselection/bibliotheek_be) by @myTselection.
