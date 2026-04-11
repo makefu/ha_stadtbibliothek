@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!-- TEMPLATE FILE: opac-user.tt -->
+<html lang="de-DE" class="no-js">
+<head>
+<title>Ihr Benutzerkonto &rsaquo; Mediathek Remseck - Katalog</title>
+</head>
+<body>
+<div id="wrapper">
+  <div id="i18nMenu">
+    <ul id="members">
+      <li><a href="/cgi-bin/koha/opac-user.pl">Ihr Benutzerkonto</a></li>
+    </ul>
+  </div>
+  <div id="opac-user" class="container-fluid">
+    <div id="useraccount" class="row">
+      <div class="col">
+        <h2>Willkommen in Ihrem Benutzerkonto, Max Mustermann</h2>
+
+        <div id="opac-user-checkouts">
+          <h3>Entliehene Medien <span class="count">(4 insgesamt)</span></h3>
+          <table id="checkoutst" class="table table-bordered table-striped">
+            <thead>
+              <tr>
+                <th class="anti-the">Titel</th>
+                <th class="author">Verfasser</th>
+                <th class="checkout_date">Ausleihdatum</th>
+                <th class="date_due">Fälligkeitsdatum</th>
+                <th class="itype">Medientyp</th>
+                <th class="barcode">Barcode</th>
+                <th class="call_no">Signatur</th>
+                <th class="renew">Verlängerung</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="title">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12345" class="title">Die unendliche Geschichte</a>
+                </td>
+                <td class="author">Ende, Michael</td>
+                <td class="checkout_date" data-order="2026-03-15">15.03.2026</td>
+                <td class="date_due" data-order="2026-04-15">15.04.2026</td>
+                <td class="itype">Buch</td>
+                <td class="barcode">T00012345</td>
+                <td class="call_no">End</td>
+                <td class="renew">
+                  <span class="renewals">Verlängerungen: 1 von 3</span>
+                </td>
+              </tr>
+              <tr class="overdue">
+                <td class="title">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12346" class="title">Momo</a>
+                </td>
+                <td class="author">Ende, Michael</td>
+                <td class="checkout_date" data-order="2026-02-01">01.02.2026</td>
+                <td class="date_due" data-order="2026-03-01">01.03.2026</td>
+                <td class="itype">Buch</td>
+                <td class="barcode">T00012346</td>
+                <td class="call_no">End</td>
+                <td class="renew">
+                  <span class="renewals">Verlängerungen: 3 von 3</span>
+                  <span class="renewals-disabled">Keine Verlängerung möglich</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="title">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12347" class="title">Tschick</a>
+                </td>
+                <td class="author">Herrndorf, Wolfgang</td>
+                <td class="checkout_date" data-order="2026-03-20">20.03.2026</td>
+                <td class="date_due" data-order="2026-04-20">20.04.2026</td>
+                <td class="itype">Hörbuch</td>
+                <td class="barcode">T00012347</td>
+                <td class="call_no">Her</td>
+                <td class="renew">
+                  <span class="renewals">Verlängerungen: 0 von 2</span>
+                </td>
+              </tr>
+              <tr>
+                <td class="title">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12348" class="title">Krabat</a>
+                </td>
+                <td class="author">Preußler, Otfried</td>
+                <td class="checkout_date" data-order="2026-04-01">01.04.2026</td>
+                <td class="date_due" data-order="2026-05-01">01.05.2026</td>
+                <td class="itype">Buch</td>
+                <td class="barcode">T00012348</td>
+                <td class="call_no">Pre</td>
+                <td class="renew">
+                  <span class="renewals">Verlängerungen: 0 von 3</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

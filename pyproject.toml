@@ -6,6 +6,7 @@ dependencies = [
     "httpx",
     "beautifulsoup4",
     "html5lib",
+    "lxml",
 ]
 
 [tool.ruff]

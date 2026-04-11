@@ -1,0 +1,171 @@
+"""Tests for the Remseck (Koha/LMSCloud) library backend."""
+
+from datetime import date
+from pathlib import Path
+
+import httpx
+import pytest
+import respx
+
+from custom_components.stadtbibliothek.backends.base import AuthenticationError
+from custom_components.stadtbibliothek.backends.remseck import RemseckBackend
+
+FIXTURES = Path(__file__).parent / "fixtures"
+BASE_URL = "https://mt-remseck.lmscloud.net"
+
+
+def _read_fixture(name: str) -> str:
+    return (FIXTURES / name).read_text()
+
+
+@pytest.fixture
+def login_html() -> str:
+    return _read_fixture("remseck_login.html")
+
+
+@pytest.fixture
+def checkouts_html() -> str:
+    return _read_fixture("remseck_checkouts.html")
+
+
+@pytest.fixture
+def fees_html() -> str:
+    return _read_fixture("remseck_fees.html")
+
+
+@pytest.fixture
+def no_checkouts_html() -> str:
+    return _read_fixture("remseck_no_checkouts.html")
+
+
+@pytest.fixture
+def no_fees_html() -> str:
+    return _read_fixture("remseck_no_fees.html")
+
+
+@respx.mock
+async def test_login_success(checkouts_html: str) -> None:
+    """Successful login returns the account page (no login form)."""
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
+        return_value=httpx.Response(200, html=checkouts_html)
+    )
+    backend = RemseckBackend()
+    try:
+        await backend.login("12345", "01.01.1990")
+        # No exception means success
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_login_failure(login_html: str) -> None:
+    """Failed login returns the login page again -> AuthenticationError."""
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
+        return_value=httpx.Response(200, html=login_html)
+    )
+    backend = RemseckBackend()
+    try:
+        with pytest.raises(AuthenticationError):
+            await backend.login("wrong", "wrong")
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_loans(checkouts_html: str) -> None:
+    """Parse the checkouts table into LoanItem objects."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
+        return_value=httpx.Response(200, html=checkouts_html)
+    )
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert len(loans) == 4
+
+    # First item: Die unendliche Geschichte
+    loan = loans[0]
+    assert loan.title == "Die unendliche Geschichte"
+    assert loan.author == "Ende, Michael"
+    assert loan.item_id == "T00012345"
+    assert loan.due_date == date(2026, 4, 15)
+    assert loan.checkout_date == date(2026, 3, 15)
+    assert loan.media_type == "Buch"
+    assert loan.call_number == "End"
+    assert loan.times_renewed == 1
+    assert loan.max_renewals == 3
+    assert loan.renewals_left == 2
+
+    # Second item: Momo (overdue, no renewals left)
+    overdue = loans[1]
+    assert overdue.title == "Momo"
+    assert overdue.item_id == "T00012346"
+    assert overdue.due_date == date(2026, 3, 1)
+    assert overdue.times_renewed == 3
+    assert overdue.max_renewals == 3
+    assert overdue.renewals_left == 0
+
+    # Third item: Tschick (Hörbuch)
+    assert loans[2].title == "Tschick"
+    assert loans[2].media_type == "Hörbuch"
+    assert loans[2].times_renewed == 0
+    assert loans[2].max_renewals == 2
+
+    # Fourth item: Krabat
+    assert loans[3].title == "Krabat"
+    assert loans[3].author == "Preußler, Otfried"
+
+
+@respx.mock
+async def test_get_loans_empty(no_checkouts_html: str) -> None:
+    """No checkouts table present -> empty list."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
+        return_value=httpx.Response(200, html=no_checkouts_html)
+    )
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert loans == []
+
+
+@respx.mock
+async def test_get_fees(fees_html: str) -> None:
+    """Parse the fees table into FeeItem objects."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(
+        return_value=httpx.Response(200, html=fees_html)
+    )
+    backend = RemseckBackend()
+    try:
+        fees = await backend.get_fees()
+    finally:
+        await backend.close()
+
+    assert len(fees) == 2
+
+    assert fees[0].description == "Momo (T00012346)"
+    assert fees[0].amount == 2.50
+    assert fees[0].date == date(2026, 3, 10)
+
+    assert fees[1].description == "Momo (T00012346) - 1. Mahnung"
+    assert fees[1].amount == 1.00
+    assert fees[1].date == date(2026, 4, 1)
+
+
+@respx.mock
+async def test_get_fees_none(no_fees_html: str) -> None:
+    """No fees table present -> empty list."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(
+        return_value=httpx.Response(200, html=no_fees_html)
+    )
+    backend = RemseckBackend()
+    try:
+        fees = await backend.get_fees()
+    finally:
+        await backend.close()
+
+    assert fees == []
