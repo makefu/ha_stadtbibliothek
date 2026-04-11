@@ -66,6 +66,7 @@
               ps.httpx
               ps.beautifulsoup4
               ps.html5lib
+              ps.lxml
               ps.respx
               ps.ruff
               ps.mypy

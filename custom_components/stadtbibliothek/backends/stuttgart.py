@@ -128,13 +128,14 @@ class StuttgartBackend(LibraryBackend):
                 media_type = title_parts.pop(0).strip("[]")
 
             # After popping media_type, remaining parts are:
-            # [title, call_number, item_id] or [title, item_id]
+            # [title, author, item_id] or [title, item_id]
             raw_title = title_parts[0] if title_parts else ""
             item_id = title_parts[-1] if title_parts else ""
-            call_number = title_parts[1] if len(title_parts) > 2 else None
 
-            # Author is embedded in the title after " / "
-            author = None
+            # Author from second part (between title and item_id)
+            author = title_parts[1] if len(title_parts) > 2 else None
+
+            # Author may also be embedded in the title after " / "
             title = raw_title
             if " / " in raw_title:
                 title, author = raw_title.split(" / ", 1)
@@ -161,7 +162,6 @@ class StuttgartBackend(LibraryBackend):
                     can_be_renewed=can_be_renewed,
                     times_renewed=times_renewed,
                     max_renewals=self.MAX_RENEWALS,
-                    call_number=call_number,
                 )
             )
 

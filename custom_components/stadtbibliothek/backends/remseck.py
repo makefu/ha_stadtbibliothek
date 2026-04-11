@@ -106,6 +106,7 @@ class RemseckBackend(LibraryBackend):
         library_branch = _cell_text(row, "td.branch")
 
         due_date = _parse_data_order_date(row, "td.date_due")
+        checkout_date = _parse_data_order_date(row, "td.checkout_date")
 
         times_renewed, max_renewals = _parse_renewals(row)
         can_be_renewed = times_renewed < max_renewals
@@ -114,6 +115,7 @@ class RemseckBackend(LibraryBackend):
             title=title,
             item_id=barcode,
             due_date=due_date or date.today(),
+            checkout_date=checkout_date,
             author=author or None,
             media_type=media_type or None,
             library_branch=library_branch or None,
