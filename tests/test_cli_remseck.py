@@ -121,5 +121,7 @@ def test_version(capsys, monkeypatch):
 
     output = capsys.readouterr().out
     assert "stadtbibliothek-remseck" in output
-    expected_version = json.loads((Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text())["version"]
+    expected_version = json.loads(
+        (Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text()
+    )["version"]
     assert expected_version in output

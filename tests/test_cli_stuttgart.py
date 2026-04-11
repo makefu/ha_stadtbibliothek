@@ -112,7 +112,9 @@ class TestVersion:
         assert exc_info.value.code == 0
         out = capsys.readouterr().out
         assert "stadtbibliothek-stuttgart" in out
-        expected_version = json.loads((Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text())["version"]
+        expected_version = json.loads(
+            (Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text()
+        )["version"]
         assert expected_version in out
 
 

@@ -67,8 +67,9 @@ Renew a specific item by its barcode/item ID.
 
 | Field | Description |
 |-------|-------------|
-| `config_entry_id` | The config entry of the library account |
+| `entity_id` | Any Stadtbibliothek sensor entity (e.g. `sensor.stadtbibliothek_remseck_12345_loans`) |
 | `item_id` | Barcode or item ID to renew |
+| `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
 ### `stadtbibliothek.renew_all`
 
@@ -76,8 +77,9 @@ Renew all renewable items for a library account.
 
 | Field | Description |
 |-------|-------------|
-| `config_entry_id` | The config entry of the library account |
+| `entity_id` | Any Stadtbibliothek sensor entity |
 | `days_remaining_threshold` | *(optional, default 14)* Only renew items due within this many days (0-90) |
+| `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
 ### `stadtbibliothek.force_update`
 
@@ -85,7 +87,8 @@ Force an immediate data refresh.
 
 | Field | Description |
 |-------|-------------|
-| `config_entry_id` | The config entry of the library account |
+| `entity_id` | Any Stadtbibliothek sensor entity |
+| `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
 ## CLI
 
@@ -117,7 +120,7 @@ Replace `remseck` with `stuttgart` for Stuttgart accounts.
 
 All examples below can be pasted directly into the Home Assistant automation editor (YAML mode). Replace `sensor.stadtbibliothek_remseck_12345_*` with your actual sensor entity IDs.
 
-> **Finding your `config_entry_id`:** Go to **Settings → Integrations → Stadtbibliothek**, click the three-dot menu on your account, and select **System options**. The URL will contain the config entry ID, e.g. `…/config_entry/abcdef1234567890`. You can also find it via **Developer Tools → Services** when calling a Stadtbibliothek service.
+> **Identifying your account:** All service calls accept an `entity_id` field — pass any Stadtbibliothek sensor (loans, warning, or fees) to identify the account. You can also use `config_entry_id` directly if you prefer.
 
 ### Notify when items are due within 3 days
 
@@ -168,7 +171,7 @@ trigger:
 action:
   - service: stadtbibliothek.renew_all
     data:
-      config_entry_id: "abcdef1234567890"
+      entity_id: sensor.stadtbibliothek_remseck_12345_loans
       days_remaining_threshold: 3
     response_variable: renew_result
   - service: notify.mobile_app
@@ -197,7 +200,7 @@ action:
       sequence:
         - service: stadtbibliothek.renew_loan
           data:
-            config_entry_id: "abcdef1234567890"
+            entity_id: sensor.stadtbibliothek_remseck_12345_loans
             item_id: "{{ repeat.item.item_id }}"
           response_variable: result
         - service: notify.mobile_app

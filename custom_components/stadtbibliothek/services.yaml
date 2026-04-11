@@ -4,10 +4,15 @@ renew_loan:
   fields:
     config_entry_id:
       name: Config Entry ID
-      description: The config entry ID of the library account.
-      required: true
+      description: The config entry ID of the library account (alternative to entity_id).
       selector:
         text:
+    entity_id:
+      name: Entity
+      description: Any Stadtbibliothek sensor entity (alternative to config_entry_id).
+      selector:
+        entity:
+          integration: stadtbibliothek
     item_id:
       name: Item ID
       description: The barcode or item ID of the loan to renew.
@@ -21,10 +26,15 @@ renew_all:
   fields:
     config_entry_id:
       name: Config Entry ID
-      description: The config entry ID of the library account.
-      required: true
+      description: The config entry ID of the library account (alternative to entity_id).
       selector:
         text:
+    entity_id:
+      name: Entity
+      description: Any Stadtbibliothek sensor entity (alternative to config_entry_id).
+      selector:
+        entity:
+          integration: stadtbibliothek
     days_remaining_threshold:
       name: Days Remaining Threshold
       description: Only renew loans with this many days or fewer remaining before due date.
@@ -41,7 +51,12 @@ force_update:
   fields:
     config_entry_id:
       name: Config Entry ID
-      description: The config entry ID of the library account.
-      required: true
+      description: The config entry ID of the library account (alternative to entity_id).
       selector:
         text:
+    entity_id:
+      name: Entity
+      description: Any Stadtbibliothek sensor entity (alternative to config_entry_id).
+      selector:
+        entity:
+          integration: stadtbibliothek

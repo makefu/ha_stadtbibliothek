@@ -11,6 +11,7 @@ try:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.const import Platform
     from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+    from homeassistant.helpers import entity_registry as er
 
     from .const import DOMAIN
     from .coordinator import StadtbibliothekCoordinator
@@ -28,23 +29,44 @@ if _HAS_HOMEASSISTANT:
 
     RENEW_LOAN_SCHEMA = vol.Schema(
         {
-            vol.Required("config_entry_id"): str,
+            vol.Optional("config_entry_id"): str,
+            vol.Optional("entity_id"): str,
             vol.Required("item_id"): str,
         }
     )
 
     RENEW_ALL_SCHEMA = vol.Schema(
         {
-            vol.Required("config_entry_id"): str,
+            vol.Optional("config_entry_id"): str,
+            vol.Optional("entity_id"): str,
             vol.Optional("days_remaining_threshold", default=14): vol.All(int, vol.Range(min=0, max=90)),
         }
     )
 
     FORCE_UPDATE_SCHEMA = vol.Schema(
         {
-            vol.Required("config_entry_id"): str,
+            vol.Optional("config_entry_id"): str,
+            vol.Optional("entity_id"): str,
         }
     )
+
+
+def _resolve_config_entry_id(hass: HomeAssistant, call_data: dict) -> str:
+    config_entry_id = call_data.get("config_entry_id")
+    entity_id = call_data.get("entity_id")
+    if config_entry_id and entity_id:
+        raise vol.Invalid("Provide either config_entry_id or entity_id, not both")
+    if config_entry_id:
+        return config_entry_id
+    if entity_id:
+        registry = er.async_get(hass)
+        entry = registry.async_get(entity_id)
+        if entry is None:
+            raise ValueError(f"Entity {entity_id} not found")
+        if entry.config_entry_id is None:
+            raise ValueError(f"Entity {entity_id} has no config entry")
+        return entry.config_entry_id
+    raise vol.Invalid("Provide either config_entry_id or entity_id")
 
 
 def _get_coordinator(hass: HomeAssistant, config_entry_id: str) -> StadtbibliothekCoordinator:
@@ -81,7 +103,8 @@ def _register_services(hass: HomeAssistant) -> None:
         return
 
     async def handle_renew_loan(call: ServiceCall) -> ServiceResponse:
-        coordinator = _get_coordinator(hass, call.data["config_entry_id"])
+        config_entry_id = _resolve_config_entry_id(hass, call.data)
+        coordinator = _get_coordinator(hass, config_entry_id)
         item_id = call.data["item_id"]
         success = await coordinator.renew_loan(item_id)
         return {
@@ -91,12 +114,14 @@ def _register_services(hass: HomeAssistant) -> None:
         }
 
     async def handle_renew_all(call: ServiceCall) -> ServiceResponse:
-        coordinator = _get_coordinator(hass, call.data["config_entry_id"])
+        config_entry_id = _resolve_config_entry_id(hass, call.data)
+        coordinator = _get_coordinator(hass, config_entry_id)
         days_remaining_threshold = call.data.get("days_remaining_threshold", 14)
         return await coordinator.renew_all(days_remaining_threshold=days_remaining_threshold)
 
     async def handle_force_update(call: ServiceCall) -> None:
-        coordinator = _get_coordinator(hass, call.data["config_entry_id"])
+        config_entry_id = _resolve_config_entry_id(hass, call.data)
+        coordinator = _get_coordinator(hass, config_entry_id)
         await coordinator.async_request_refresh()
 
     hass.services.async_register(

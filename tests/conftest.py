@@ -125,6 +125,37 @@ class DeviceEntryType:
 
 _make_module("homeassistant.helpers.device_registry", DeviceEntryType=DeviceEntryType)
 
+# --- homeassistant.helpers.entity_registry ---
+
+
+class _EntityRegistryEntry:
+    def __init__(self, config_entry_id=None):
+        self.config_entry_id = config_entry_id
+
+
+class _EntityRegistry:
+    def __init__(self):
+        self._entries: dict[str, _EntityRegistryEntry] = {}
+
+    def async_get(self, entity_id: str) -> _EntityRegistryEntry | None:
+        return self._entries.get(entity_id)
+
+    def add(self, entity_id: str, config_entry_id: str | None = None) -> None:
+        self._entries[entity_id] = _EntityRegistryEntry(config_entry_id)
+
+
+_entity_registry_instance = _EntityRegistry()
+
+
+def _er_async_get(hass):
+    return _entity_registry_instance
+
+
+_make_module(
+    "homeassistant.helpers.entity_registry",
+    async_get=_er_async_get,
+)
+
 # --- homeassistant.helpers.entity_platform ---
 _make_module("homeassistant.helpers.entity_platform", AddEntitiesCallback=list)
 
