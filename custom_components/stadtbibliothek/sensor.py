@@ -146,6 +146,7 @@ class WarningSensor(StadtbibliothekEntity):
             "overdue_count": len(overdue),
             "items_due_soon": len(due_soon),
             "earliest_due_date": earliest.isoformat(),
+            "refresh_required": self.coordinator.refresh_required,
         }
 
 

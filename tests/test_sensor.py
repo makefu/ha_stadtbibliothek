@@ -13,6 +13,7 @@ from custom_components.stadtbibliothek.sensor import FeesSensor, LoansSensor, Wa
 def _make_sensor(sensor_cls, account: AccountInfo | None):
     coordinator = MagicMock()
     coordinator.data = account
+    coordinator.refresh_required = False
     config_entry = MagicMock()
     config_entry.entry_id = "test_entry"
     return sensor_cls(coordinator, config_entry, "remseck", "testuser")
@@ -97,6 +98,17 @@ class TestWarningSensor:
         attrs = sensor.extra_state_attributes
         assert attrs["overdue_count"] == 1
         assert "earliest_due_date" in attrs
+
+    def test_refresh_required_default_false(self, sample_account):
+        sensor = _make_sensor(WarningSensor, sample_account)
+        attrs = sensor.extra_state_attributes
+        assert attrs["refresh_required"] is False
+
+    def test_refresh_required_true_from_coordinator(self, sample_account):
+        sensor = _make_sensor(WarningSensor, sample_account)
+        sensor.coordinator.refresh_required = True
+        attrs = sensor.extra_state_attributes
+        assert attrs["refresh_required"] is True
 
     def test_items_due_soon(self):
         loans = [

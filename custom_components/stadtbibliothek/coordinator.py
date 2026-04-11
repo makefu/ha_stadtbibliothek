@@ -39,6 +39,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         self._library_type = config_entry.data[CONF_LIBRARY_TYPE]
         self._username = config_entry.data[CONF_USERNAME]
         self._password = config_entry.data[CONF_PASSWORD]
+        self.refresh_required: bool = False
 
     def _create_backend(self) -> RemseckBackend | StuttgartBackend:
         client = get_async_client(self.hass)
@@ -46,6 +47,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         return backend_cls(client=client)
 
     async def _async_update_data(self) -> AccountInfo:
+        self.refresh_required = False
         backend = self._create_backend()
         try:
             await backend.login(self._username, self._password)
@@ -70,6 +72,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         try:
             await backend.login(self._username, self._password)
             result = await backend.renew_loan(item_id)
+            self.refresh_required = True
             await self.async_request_refresh()
             return result
         except Exception as err:
@@ -81,6 +84,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         try:
             await backend.login(self._username, self._password)
             count = await backend.renew_all(days_remaining_threshold=days_remaining_threshold)
+            self.refresh_required = True
             await self.async_request_refresh()
             return count
         except Exception as err:
