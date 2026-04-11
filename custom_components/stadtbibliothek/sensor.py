@@ -51,6 +51,7 @@ class StadtbibliothekEntity(CoordinatorEntity[StadtbibliothekCoordinator], Senso
         username: str,
     ) -> None:
         super().__init__(coordinator)
+        self._lib_type = lib_type
         self._slug = _slug(lib_type, username)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, config_entry.entry_id)},
@@ -84,8 +85,9 @@ class LoansSensor(StadtbibliothekEntity):
     def extra_state_attributes(self) -> dict:
         if self._account is None:
             return {}
+        library = self._lib_type.capitalize()
         return {
-            "loans": [serialize_loan(loan) for loan in self._account.loans],
+            "loans": [{**serialize_loan(loan), "library": library} for loan in self._account.loans],
         }
 
 

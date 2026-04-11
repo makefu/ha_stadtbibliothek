@@ -34,6 +34,11 @@ class TestLoansSensor:
         assert len(attrs["loans"]) == 2
         assert attrs["loans"][0]["title"] == "Python Crash Course"
 
+    def test_attributes_include_library(self, sample_account):
+        sensor = _make_sensor(LoansSensor, sample_account)
+        attrs = sensor.extra_state_attributes
+        assert attrs["loans"][0]["library"] == "Remseck"
+
     def test_attributes_include_computed_properties(self, sample_account):
         """Loan attributes should include days_remaining, is_overdue, renewals_left."""
         sensor = _make_sensor(LoansSensor, sample_account)

@@ -241,7 +241,7 @@ action:
       message: >
         Folgende Medien sind bald fällig und können nicht verlängert werden:
         {% for loan in due_soon %}
-        - {{ loan.title }} — fällig {{ loan.due_date }} ({{ loan.days_remaining }} Tage)
+        - [{{ loan.library }}] {{ loan.title }} — fällig {{ loan.due_date }} ({{ loan.days_remaining }} Tage)
         {% endfor %}
 ```
 
