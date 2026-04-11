@@ -1,0 +1,203 @@
+"""Stuttgart aDIS/BMS library backend."""
+
+import re
+from datetime import datetime
+
+import httpx
+from bs4 import BeautifulSoup, Tag
+
+from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem
+
+# Fields that indicate media type prefixes in title column
+_MEDIA_TYPE_PATTERN = re.compile(r"^\[.+\]$")
+
+
+class StuttgartBackend(LibraryBackend):
+    library_type = LibraryType.STUTTGART
+    BASE_URL = "https://stadtbibliothek-stuttgart.de"
+    START_PATH = "?service=direct/0/Home/$DirectLink&sp=SOPAC"
+    MAX_RENEWALS = 8
+
+    _USER_AGENT = (
+        "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
+    )
+
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client or httpx.AsyncClient(
+            headers={"User-Agent": self._USER_AGENT},
+            follow_redirects=True,
+        )
+        self._login_url: str | None = None
+        self._ausleihen_url: str | None = None
+
+    async def login(self, username: str, password: str) -> None:
+        # Step 1: GET start page, extract form with jsessionid
+        resp = await self._client.get(f"{self.BASE_URL}{self.START_PATH}")
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        form = soup.find("form")
+        if not isinstance(form, Tag):
+            raise AuthenticationError("No form found on start page")
+
+        action_path = form.attrs["action"]
+        self._login_url = f"{self.BASE_URL}{action_path}"
+
+        data = self._extract_hidden_inputs(form)
+        data["SUO1_AUTHFU_1_hidden"] = ""
+        data["select"] = "- Alle -"
+        data["selected"] = "ZTEXT       *SBK"
+        data["Form0"] = (
+            "focus,keyCode,stz,source,selected,requestCount,scriptEnabled,"
+            "scrollPos,scrDim,winDim,imgDim,SUO1_AUTHFU_1,$Autosuggest,"
+            "select,$FormConditional,textButton,$FormConditional$0,"
+            "textButton$0,$FormConditional$1,$FormConditional$2,"
+            "$FormConditional$3,$FormConditional$4"
+        )
+        data.pop("textButton$0", None)
+
+        # Step 2: POST to get login form, then fill credentials
+        resp = await self._client.post(
+            self._login_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        form = soup.find("form")
+        if not isinstance(form, Tag):
+            raise AuthenticationError("No login form found")
+
+        data = self._extract_hidden_inputs(form)
+        data["$Textfield"] = username
+        data["$Textfield$0"] = password
+        data["focus"] = "$$GFBO_2"
+        data["scriptEnabled"] = "true"
+        data.pop("textButton$0", None)
+        data.pop("textButton$1", None)
+        data.pop("textButton$2", None)
+        data["Form0"] = (
+            "focus,keyCode,stz,source,select,selected,requestCount,"
+            "scriptEnabled,scrollPos,scrDim,winDim,imgDim,$Textfield,"
+            "$Textfield$0,$FormConditional,textButton,$FormConditional$0,"
+            "textButton$0,$FormConditional$1,textButton$1,"
+            "$FormConditional$2,textButton$2"
+        )
+
+        # Step 3: POST credentials, find Ausleihen link
+        resp = await self._client.post(
+            self._login_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        for link in soup.select("div#konto-services li a"):
+            if "Ausleihen" in link.text:
+                self._ausleihen_url = f"{self.BASE_URL}{link.attrs['href']}"
+                return
+
+        raise AuthenticationError(
+            "Login failed: konto-services with Ausleihen link not found"
+        )
+
+    async def get_loans(self) -> list[LoanItem]:
+        if not self._ausleihen_url:
+            raise RuntimeError("Must call login() before get_loans()")
+
+        resp = await self._client.get(self._ausleihen_url)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        table = soup.select_one("table.rTable_table tbody")
+        if table is None:
+            return []
+
+        loans: list[LoanItem] = []
+        for row in table.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 5:
+                continue
+
+            due_date = datetime.strptime(cells[1].text.strip(), "%d.%m.%Y").date()
+            branch = cells[2].text.strip()
+
+            # Parse title column: innerHTML split on <br>
+            title_parts = self._split_br(cells[3])
+            media_type = None
+            if title_parts and _MEDIA_TYPE_PATTERN.match(title_parts[0]):
+                media_type = title_parts.pop(0).strip("[]")
+
+            title = title_parts[0] if title_parts else ""
+            item_id = title_parts[-1] if title_parts else ""
+            author = title_parts[1] if len(title_parts) > 2 else None
+
+            # Parse extension column
+            ext_parts = self._split_br(cells[4])
+            ext_text = ext_parts[0] if ext_parts else ""
+            can_be_renewed = ext_text.startswith("verlängerbar") or ext_text.startswith(
+                "Heute verlängert"
+            )
+
+            times_renewed = 0
+            if len(ext_parts) > 1:
+                m = re.match(r"(\d+)\s+Verlängerungen?", ext_parts[1].strip())
+                if m:
+                    times_renewed = int(m.group(1))
+
+            loans.append(
+                LoanItem(
+                    title=title,
+                    item_id=item_id,
+                    due_date=due_date,
+                    library_branch=branch,
+                    media_type=media_type,
+                    author=author,
+                    can_be_renewed=can_be_renewed,
+                    times_renewed=times_renewed,
+                    max_renewals=self.MAX_RENEWALS,
+                    call_number=item_id,
+                )
+            )
+
+        return loans
+
+    async def get_fees(self) -> list[FeeItem]:
+        return []
+
+    async def renew_loan(self, item_id: str) -> bool:
+        return False
+
+    async def renew_all(self) -> int:
+        return 0
+
+    async def close(self) -> None:
+        await self._client.aclose()
+
+    @staticmethod
+    def _extract_hidden_inputs(form: Tag) -> dict[str, str]:
+        data: dict[str, str] = {}
+        for inp in form.find_all("input"):
+            name = inp.get("name")
+            if name and isinstance(name, str):
+                value = inp.get("value", "")
+                data[name] = str(value)
+        return data
+
+    @staticmethod
+    def _split_br(cell: Tag) -> list[str]:
+        """Split cell innerHTML on <br> tags, return stripped text parts."""
+        parts: list[str] = []
+        for content in cell.decode_contents().split("<br"):
+            # strip the closing > or /> from the br tag remnant
+            text = (
+                re.sub(r"^[^>]*>", "", content)
+                if not content.startswith("<")
+                else content
+            )
+            text = re.sub(r"<[^>]+>", "", text).strip()
+            if text:
+                parts.append(text)
+        return parts
