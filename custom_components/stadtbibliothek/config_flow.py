@@ -8,7 +8,6 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.helpers.httpx_client import get_async_client
 
 from .backends.base import AuthenticationError, LibraryType
 from .backends.remseck import RemseckBackend
@@ -50,8 +49,7 @@ class StadtbibliothekConfigFlow(ConfigFlow, domain=DOMAIN):
             password = user_input[CONF_PASSWORD]
 
             backend_cls = BACKEND_MAP[library_type]
-            client = get_async_client(self.hass)
-            backend = backend_cls(client=client)
+            backend = backend_cls()
 
             try:
                 await backend.login(username, password)

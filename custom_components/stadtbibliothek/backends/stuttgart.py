@@ -25,6 +25,7 @@ class StuttgartBackend(LibraryBackend):
         self._client = client or httpx.AsyncClient(
             headers={"User-Agent": self._USER_AGENT},
             follow_redirects=True,
+            timeout=30.0,
         )
         self._login_url: str | None = None
         self._ausleihen_url: str | None = None

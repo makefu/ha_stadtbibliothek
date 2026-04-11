@@ -36,8 +36,7 @@ def _make_coordinator(library_type="remseck", username="testuser", password="tes
     return StadtbibliothekCoordinator(hass, entry)
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_update_data_returns_account_info(mock_get_client, mock_backend, sample_loans, sample_fees):
+async def test_update_data_returns_account_info(mock_backend, sample_loans, sample_fees):
     coordinator = _make_coordinator()
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -52,8 +51,7 @@ async def test_update_data_returns_account_info(mock_get_client, mock_backend, s
     mock_backend.login.assert_awaited_once_with("testuser", "testpass")
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_update_data_auth_error_raises_update_failed(mock_get_client):
+async def test_update_data_auth_error_raises_update_failed():
     coordinator = _make_coordinator()
     backend = AsyncMock()
     backend.login = AsyncMock(side_effect=AuthenticationError("bad"))
@@ -63,8 +61,7 @@ async def test_update_data_auth_error_raises_update_failed(mock_get_client):
             await coordinator._async_update_data()
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_update_data_generic_error_raises_update_failed(mock_get_client):
+async def test_update_data_generic_error_raises_update_failed():
     coordinator = _make_coordinator()
     backend = AsyncMock()
     backend.login = AsyncMock(side_effect=RuntimeError("network down"))
@@ -74,8 +71,7 @@ async def test_update_data_generic_error_raises_update_failed(mock_get_client):
             await coordinator._async_update_data()
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_renew_loan(mock_get_client, mock_backend):
+async def test_renew_loan(mock_backend):
     coordinator = _make_coordinator()
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -87,8 +83,7 @@ async def test_renew_loan(mock_get_client, mock_backend):
     mock_backend.renew_loan.assert_awaited_once_with("12345")
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_renew_all(mock_get_client, mock_backend):
+async def test_renew_all(mock_backend):
     coordinator = _make_coordinator()
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -99,8 +94,7 @@ async def test_renew_all(mock_get_client, mock_backend):
     mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=14)
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_renew_all_with_custom_threshold(mock_get_client, mock_backend):
+async def test_renew_all_with_custom_threshold(mock_backend):
     coordinator = _make_coordinator()
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -111,8 +105,7 @@ async def test_renew_all_with_custom_threshold(mock_get_client, mock_backend):
     mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=7)
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_refresh_required_set_after_renew_all(mock_get_client, mock_backend):
+async def test_refresh_required_set_after_renew_all(mock_backend):
     coordinator = _make_coordinator()
     assert coordinator.refresh_required is False
 
@@ -123,8 +116,7 @@ async def test_refresh_required_set_after_renew_all(mock_get_client, mock_backen
     assert coordinator.refresh_required is True
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_refresh_required_set_after_renew_loan(mock_get_client, mock_backend):
+async def test_refresh_required_set_after_renew_loan(mock_backend):
     coordinator = _make_coordinator()
     assert coordinator.refresh_required is False
 
@@ -135,8 +127,7 @@ async def test_refresh_required_set_after_renew_loan(mock_get_client, mock_backe
     assert coordinator.refresh_required is True
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_refresh_required_cleared_after_update(mock_get_client, mock_backend):
+async def test_refresh_required_cleared_after_update(mock_backend):
     coordinator = _make_coordinator()
 
     # First do a renewal to set the flag
@@ -153,8 +144,7 @@ async def test_refresh_required_cleared_after_update(mock_get_client, mock_backe
     assert coordinator.refresh_required is False
 
 
-@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
-async def test_refresh_required_not_set_on_failed_renewal(mock_get_client):
+async def test_refresh_required_not_set_on_failed_renewal():
     coordinator = _make_coordinator()
     backend = AsyncMock()
     backend.login = AsyncMock(side_effect=RuntimeError("network down"))

@@ -7,7 +7,6 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .backends.base import AccountInfo, AuthenticationError, LibraryType
@@ -42,9 +41,8 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         self.refresh_required: bool = False
 
     def _create_backend(self) -> RemseckBackend | StuttgartBackend:
-        client = get_async_client(self.hass)
         backend_cls = BACKEND_MAP[self._library_type]
-        return backend_cls(client=client)
+        return backend_cls()
 
     async def _async_update_data(self) -> AccountInfo:
         self.refresh_required = False

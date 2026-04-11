@@ -41,8 +41,7 @@ async def test_show_form_on_first_step(flow):
     assert result["step_id"] == "user"
 
 
-@patch("custom_components.stadtbibliothek.config_flow.get_async_client")
-async def test_successful_login_remseck(mock_get_client, flow):
+async def test_successful_login_remseck(flow):
     cls, inst = _mock_backend_cls()
     with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
         result = await flow.async_step_user(_user_input())
@@ -52,8 +51,7 @@ async def test_successful_login_remseck(mock_get_client, flow):
     inst.login.assert_awaited_once_with("testuser", "testpass")
 
 
-@patch("custom_components.stadtbibliothek.config_flow.get_async_client")
-async def test_successful_login_stuttgart(mock_get_client, flow):
+async def test_successful_login_stuttgart(flow):
     cls, inst = _mock_backend_cls()
     with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"stuttgart": cls}):
         result = await flow.async_step_user(_user_input(library_type="stuttgart"))
@@ -61,8 +59,7 @@ async def test_successful_login_stuttgart(mock_get_client, flow):
     assert result["title"] == "Stuttgart (aDIS) - testuser"
 
 
-@patch("custom_components.stadtbibliothek.config_flow.get_async_client")
-async def test_invalid_auth_shows_error(mock_get_client, flow):
+async def test_invalid_auth_shows_error(flow):
     cls, _ = _mock_backend_cls(login_side_effect=AuthenticationError("bad creds"))
     with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
         result = await flow.async_step_user(_user_input())
@@ -70,8 +67,7 @@ async def test_invalid_auth_shows_error(mock_get_client, flow):
     assert result["errors"]["base"] == "invalid_auth"
 
 
-@patch("custom_components.stadtbibliothek.config_flow.get_async_client")
-async def test_connection_error_shows_error(mock_get_client, flow):
+async def test_connection_error_shows_error(flow):
     cls, _ = _mock_backend_cls(login_side_effect=ConnectionError("timeout"))
     with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
         result = await flow.async_step_user(_user_input())
