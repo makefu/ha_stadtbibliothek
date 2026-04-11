@@ -54,6 +54,10 @@
             mkdir -p $out/custom_components
             cp -r custom_components/stadtbibliothek $out/custom_components/stadtbibliothek
           '';
+          passthru = {
+            isHomeAssistantComponent = true;
+            domain = "stadtbibliothek";
+          };
         };
       });
 
@@ -76,6 +80,13 @@
           ];
         };
       });
+
+      checks = forAllSystems (
+        pkgs:
+        nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          vm-test = import ./nix/vm-test.nix { inherit pkgs; };
+        }
+      );
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
     };
