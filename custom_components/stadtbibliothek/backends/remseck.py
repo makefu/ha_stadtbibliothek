@@ -100,7 +100,7 @@ class RemseckBackend(LibraryBackend):
         title = title_tag.get_text(strip=True) if title_tag else ""
 
         author = _cell_text(row, "td.author")
-        barcode = _cell_text(row, "td.barcode") or _extract_biblionumber(title_tag)
+        item_id = _cell_text(row, "td.barcode") or _extract_biblionumber(title_tag)
         media_type = _cell_text(row, "td.itype")
         call_number = _cell_text(row, "td.call_no")
         library_branch = _cell_text(row, "td.branch")
@@ -109,11 +109,18 @@ class RemseckBackend(LibraryBackend):
         checkout_date = _parse_data_order_date(row, "td.checkout_date")
 
         times_renewed, max_renewals = _parse_renewals(row)
-        can_be_renewed = times_renewed < max_renewals
+        no_renewal_before = _parse_no_renewal_before(row)
+        renewals_disabled = _is_renewals_disabled(row)
+
+        can_be_renewed = (
+            times_renewed < max_renewals
+            and not renewals_disabled
+            and (no_renewal_before is None or date.today() >= no_renewal_before)
+        )
 
         return LoanItem(
             title=title,
-            item_id=barcode,
+            item_id=item_id,
             due_date=due_date or date.today(),
             checkout_date=checkout_date,
             author=author or None,
@@ -156,7 +163,12 @@ def _extract_biblionumber(title_tag: Tag | None) -> str:
 
 def _cell_text(row: Tag, selector: str) -> str:
     cell = row.select_one(selector)
-    return cell.get_text(strip=True) if cell else ""
+    if not cell:
+        return ""
+    # Remove tdlabel spans before extracting text (Koha adds hidden labels)
+    for label in cell.select("span.tdlabel"):
+        label.decompose()
+    return cell.get_text(strip=True)
 
 
 def _parse_data_order_date(row: Tag, selector: str) -> date | None:
@@ -166,8 +178,10 @@ def _parse_data_order_date(row: Tag, selector: str) -> date | None:
     data_order = cell.get("data-order")
     if data_order and isinstance(data_order, str):
         try:
-            return date.fromisoformat(data_order)
-        except ValueError:
+            # data-order may contain datetime "2026-04-25 23:59:00"; take date part only
+            date_str = data_order.split()[0]
+            return date.fromisoformat(date_str)
+        except (ValueError, IndexError):
             pass
     # Fallback: parse German date from text
     return _parse_german_date(cell.get_text(strip=True))
@@ -193,16 +207,37 @@ def _parse_german_decimal(text: str) -> float:
 def _parse_renewals(row: Tag) -> tuple[int, int]:
     """Extract (times_renewed, max_renewals) from renewal cell.
 
-    Looks for patterns like "Verlängerungen: 1 von 3" or "1 of 3".
+    Real format: "( X von Y Verlängerungen verbleiben )" where X = remaining, Y = total.
     """
     renew_cell = row.select_one("td.renew")
     if not renew_cell:
         return 0, 0
     text = renew_cell.get_text()
+    m = re.search(r"(\d+)\s+von\s+(\d+)\s+Verlängerungen\s+verbleiben", text)
+    if m:
+        remaining = int(m.group(1))
+        total = int(m.group(2))
+        return total - remaining, total
+    # Legacy fallback: "Verlängerungen: X von Y" or "X von Y"
     m = re.search(r"(\d+)\s+von\s+(\d+)", text)
     if m:
         return int(m.group(1)), int(m.group(2))
-    m = re.search(r"(\d+)\s+of\s+(\d+)", text)
-    if m:
-        return int(m.group(1)), int(m.group(2))
     return 0, 0
+
+
+def _parse_no_renewal_before(row: Tag) -> date | None:
+    """Extract the earliest renewal date from 'Keine Verlängerung vor DD.MM.YYYY HH:MM'."""
+    span = row.select_one("span.no-renewal-before")
+    if not span:
+        return None
+    text = span.get_text(strip=True)
+    m = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", text)
+    if m:
+        return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    return None
+
+
+def _is_renewals_disabled(row: Tag) -> bool:
+    """Check if renewals are explicitly disabled via 'Keine Verlängerung möglich'."""
+    span = row.select_one("span.renewals-disabled")
+    return span is not None

@@ -21,73 +21,129 @@
           <table id="checkoutst" class="table table-bordered table-striped">
             <thead>
               <tr>
+                <th class="jacketcell">&nbsp;</th>
                 <th class="anti-the">Titel</th>
                 <th class="author">Verfasser</th>
-                <th class="checkout_date">Ausleihdatum</th>
-                <th class="date_due">Fälligkeitsdatum</th>
                 <th class="itype">Medientyp</th>
-                <th class="barcode">Barcode</th>
+                <th class="date_due">Fälligkeitsdatum</th>
+                <th class="branch">Zweigstelle</th>
                 <th class="call_no">Signatur</th>
                 <th class="renew">Verlängerung</th>
+                <th class="fines">Gebühren</th>
               </tr>
             </thead>
             <tbody>
               <tr>
+                <td class="jacketcell">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12345">
+                    <img src="/opac-tmpl/bootstrap/images/no-image.png" alt="" />
+                  </a>
+                </td>
                 <td class="title">
-                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12345" class="title">Die unendliche Geschichte</a>
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12345" class="title">
+                    <span class="biblio-title">Die unendliche Geschichte</span>
+                  </a>
                 </td>
                 <td class="author">Ende, Michael</td>
-                <td class="checkout_date" data-order="2026-03-15">15.03.2026</td>
-                <td class="date_due" data-order="2026-04-15">15.04.2026</td>
                 <td class="itype">Buch</td>
-                <td class="barcode">T00012345</td>
-                <td class="call_no">End</td>
-                <td class="renew">
-                  <span class="renewals">Verlängerungen: 1 von 3</span>
+                <td class="date_due" data-order="2026-04-15 23:59:00">
+                  <span class="tdlabel">Fälligkeitsdatum: </span>15.04.2026
                 </td>
+                <td class="branch">
+                  <span class="tdlabel">Zweigstelle: </span>Mediathek im KUBUS
+                </td>
+                <td class="call_no">
+                  <span class="tdlabel">Signatur: </span>End
+                </td>
+                <td class="renew" data-order="1">
+                  <span class="renewals">( 2 von 3 Verlängerungen verbleiben )</span>
+                  <span class="usr-msg no-renewal-before">Keine Verlängerung vor 08.04.2026 00:00</span>
+                </td>
+                <td class="fines"></td>
               </tr>
               <tr class="overdue">
+                <td class="jacketcell">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12346">
+                    <img src="/opac-tmpl/bootstrap/images/no-image.png" alt="" />
+                  </a>
+                </td>
                 <td class="title">
-                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12346" class="title">Momo</a>
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12346" class="title">
+                    <span class="biblio-title">Momo</span>
+                  </a>
                 </td>
                 <td class="author">Ende, Michael</td>
-                <td class="checkout_date" data-order="2026-02-01">01.02.2026</td>
-                <td class="date_due" data-order="2026-03-01">01.03.2026</td>
                 <td class="itype">Buch</td>
-                <td class="barcode">T00012346</td>
-                <td class="call_no">End</td>
-                <td class="renew">
-                  <span class="renewals">Verlängerungen: 3 von 3</span>
+                <td class="date_due" data-order="2026-03-01 23:59:00">
+                  <span class="tdlabel">Fälligkeitsdatum: </span>01.03.2026
+                </td>
+                <td class="branch">
+                  <span class="tdlabel">Zweigstelle: </span>Mediathek im KUBUS
+                </td>
+                <td class="call_no">
+                  <span class="tdlabel">Signatur: </span>End
+                </td>
+                <td class="renew" data-order="3">
+                  <span class="renewals">( 0 von 3 Verlängerungen verbleiben )</span>
                   <span class="renewals-disabled">Keine Verlängerung möglich</span>
                 </td>
+                <td class="fines">2,50</td>
               </tr>
               <tr>
+                <td class="jacketcell">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12347">
+                    <img src="/opac-tmpl/bootstrap/images/no-image.png" alt="" />
+                  </a>
+                </td>
                 <td class="title">
-                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12347" class="title">Tschick</a>
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12347" class="title">
+                    <span class="biblio-title">Tschick</span>
+                  </a>
                 </td>
                 <td class="author">Herrndorf, Wolfgang</td>
-                <td class="checkout_date" data-order="2026-03-20">20.03.2026</td>
-                <td class="date_due" data-order="2026-04-20">20.04.2026</td>
                 <td class="itype">Hörbuch</td>
-                <td class="barcode">T00012347</td>
-                <td class="call_no">Her</td>
-                <td class="renew">
-                  <span class="renewals">Verlängerungen: 0 von 2</span>
+                <td class="date_due" data-order="2026-04-20 23:59:00">
+                  <span class="tdlabel">Fälligkeitsdatum: </span>20.04.2026
                 </td>
+                <td class="branch">
+                  <span class="tdlabel">Zweigstelle: </span>Mediathek im KUBUS
+                </td>
+                <td class="call_no">
+                  <span class="tdlabel">Signatur: </span>Her
+                </td>
+                <td class="renew" data-order="0">
+                  <span class="renewals">( 2 von 2 Verlängerungen verbleiben )</span>
+                  <span class="usr-msg no-renewal-before">Keine Verlängerung vor 13.04.2026 00:00</span>
+                </td>
+                <td class="fines"></td>
               </tr>
               <tr>
+                <td class="jacketcell">
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12348">
+                    <img src="/opac-tmpl/bootstrap/images/no-image.png" alt="" />
+                  </a>
+                </td>
                 <td class="title">
-                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12348" class="title">Krabat</a>
+                  <a href="/cgi-bin/koha/opac-detail.pl?biblionumber=12348" class="title">
+                    <span class="biblio-title">Krabat</span>
+                  </a>
                 </td>
                 <td class="author">Preußler, Otfried</td>
-                <td class="checkout_date" data-order="2026-04-01">01.04.2026</td>
-                <td class="date_due" data-order="2026-05-01">01.05.2026</td>
                 <td class="itype">Buch</td>
-                <td class="barcode">T00012348</td>
-                <td class="call_no">Pre</td>
-                <td class="renew">
-                  <span class="renewals">Verlängerungen: 0 von 3</span>
+                <td class="date_due" data-order="2026-05-01 23:59:00">
+                  <span class="tdlabel">Fälligkeitsdatum: </span>01.05.2026
                 </td>
+                <td class="branch">
+                  <span class="tdlabel">Zweigstelle: </span>Mediathek im KUBUS
+                </td>
+                <td class="call_no">
+                  <span class="tdlabel">Signatur: </span>Pre
+                </td>
+                <td class="renew" data-order="0">
+                  <span class="renewals">( 3 von 3 Verlängerungen verbleiben )</span>
+                  <span class="usr-msg no-renewal-before">Keine Verlängerung vor 24.04.2026 00:00</span>
+                </td>
+                <td class="fines"></td>
               </tr>
             </tbody>
           </table>

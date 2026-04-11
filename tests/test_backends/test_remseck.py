@@ -70,6 +70,7 @@ async def test_login_failure(login_html: str) -> None:
 
 
 @respx.mock
+@freeze_time("2026-04-11")
 async def test_get_loans(checkouts_html: str) -> None:
     """Parse the checkouts table into LoanItem objects."""
     respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
@@ -82,36 +83,49 @@ async def test_get_loans(checkouts_html: str) -> None:
     assert len(loans) == 4
 
     # First item: Die unendliche Geschichte
+    # no-renewal-before 08.04 is in the past -> can renew
     loan = loans[0]
     assert loan.title == "Die unendliche Geschichte"
     assert loan.author == "Ende, Michael"
-    assert loan.item_id == "T00012345"
+    assert loan.item_id == "12345"
     assert loan.due_date == date(2026, 4, 15)
-    assert loan.checkout_date == date(2026, 3, 15)
+    assert loan.checkout_date is None
     assert loan.media_type == "Buch"
+    assert loan.library_branch == "Mediathek im KUBUS"
     assert loan.call_number == "End"
     assert loan.times_renewed == 1
     assert loan.max_renewals == 3
     assert loan.renewals_left == 2
+    assert loan.can_be_renewed is True
 
-    # Second item: Momo (overdue, no renewals left)
+    # Second item: Momo (overdue, no renewals left, renewals-disabled)
     overdue = loans[1]
     assert overdue.title == "Momo"
-    assert overdue.item_id == "T00012346"
+    assert overdue.item_id == "12346"
     assert overdue.due_date == date(2026, 3, 1)
     assert overdue.times_renewed == 3
     assert overdue.max_renewals == 3
     assert overdue.renewals_left == 0
+    assert overdue.can_be_renewed is False
 
     # Third item: Tschick (Hörbuch)
+    # no-renewal-before 13.04 is AFTER test date 2026-04-11 -> cannot renew yet
     assert loans[2].title == "Tschick"
+    assert loans[2].due_date == date(2026, 4, 20)
     assert loans[2].media_type == "Hörbuch"
     assert loans[2].times_renewed == 0
     assert loans[2].max_renewals == 2
+    assert loans[2].renewals_left == 2
+    assert loans[2].can_be_renewed is False
 
     # Fourth item: Krabat
+    # no-renewal-before 24.04 is AFTER test date -> cannot renew yet
     assert loans[3].title == "Krabat"
     assert loans[3].author == "Preußler, Otfried"
+    assert loans[3].due_date == date(2026, 5, 1)
+    assert loans[3].times_renewed == 0
+    assert loans[3].max_renewals == 3
+    assert loans[3].can_be_renewed is False
 
 
 @respx.mock
