@@ -18,9 +18,7 @@ class StuttgartBackend(LibraryBackend):
     START_PATH = "?service=direct/0/Home/$DirectLink&sp=SOPAC"
     MAX_RENEWALS = 8
 
-    _USER_AGENT = (
-        "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
-    )
+    _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
 
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         self._client = client or httpx.AsyncClient(
@@ -99,9 +97,7 @@ class StuttgartBackend(LibraryBackend):
                 self._ausleihen_url = f"{self.BASE_URL}{link.attrs['href']}"
                 return
 
-        raise AuthenticationError(
-            "Login failed: konto-services with Ausleihen link not found"
-        )
+        raise AuthenticationError("Login failed: konto-services with Ausleihen link not found")
 
     async def get_loans(self) -> list[LoanItem]:
         if not self._ausleihen_url:
@@ -137,9 +133,7 @@ class StuttgartBackend(LibraryBackend):
             # Parse extension column
             ext_parts = self._split_br(cells[4])
             ext_text = ext_parts[0] if ext_parts else ""
-            can_be_renewed = ext_text.startswith("verlängerbar") or ext_text.startswith(
-                "Heute verlängert"
-            )
+            can_be_renewed = ext_text.startswith("verlängerbar") or ext_text.startswith("Heute verlängert")
 
             times_renewed = 0
             if len(ext_parts) > 1:
@@ -192,11 +186,7 @@ class StuttgartBackend(LibraryBackend):
         parts: list[str] = []
         for content in cell.decode_contents().split("<br"):
             # strip the closing > or /> from the br tag remnant
-            text = (
-                re.sub(r"^[^>]*>", "", content)
-                if not content.startswith("<")
-                else content
-            )
+            text = re.sub(r"^[^>]*>", "", content) if not content.startswith("<") else content
             text = re.sub(r"<[^>]+>", "", text).strip()
             if text:
                 parts.append(text)

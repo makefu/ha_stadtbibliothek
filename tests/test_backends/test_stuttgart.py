@@ -113,9 +113,7 @@ async def test_get_loans() -> None:
     """Parses loan table into LoanItem objects with correct fields."""
     _mock_login_flow(respx)
     respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(
-            200, text=_read_fixture("stuttgart_ausleihen.html")
-        ),
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
 
     backend = StuttgartBackend()
@@ -163,9 +161,7 @@ async def test_get_loans_parses_extension_info() -> None:
     """Extension column parsing: verlängerbar vs nicht verlängerbar, renewal counts."""
     _mock_login_flow(respx)
     respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(
-            200, text=_read_fixture("stuttgart_ausleihen.html")
-        ),
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
 
     backend = StuttgartBackend()
@@ -201,9 +197,7 @@ async def test_get_loans_skips_media_type_prefix() -> None:
     """Media type like [CD] or [Konventionelles Spiel] is extracted, not in title."""
     _mock_login_flow(respx)
     respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(
-            200, text=_read_fixture("stuttgart_ausleihen.html")
-        ),
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
 
     backend = StuttgartBackend()
