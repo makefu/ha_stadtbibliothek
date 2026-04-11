@@ -155,7 +155,7 @@ automation:
             {% endfor %}
 ```
 
-### Auto-renew all items when due within 2 days
+### Auto-renew all items when due within 3 days
 
 ```yaml
 automation:
@@ -163,11 +163,49 @@ automation:
     trigger:
       - platform: numeric_state
         entity_id: sensor.stadtbibliothek_remseck_12345_warning
-        below: 3
+        below: 4
     action:
       - service: stadtbibliothek.renew_all
         data:
           config_entry_id: !input config_entry_id
+          days_remaining_threshold: 3
+        response_variable: renew_result
+      - service: notify.mobile_app
+        data:
+          title: "{{ renew_result.renewed }}/{{ renew_result.total_attempted }} verlängert"
+          message: >
+            {% for r in renew_result.results %}
+            {% if r.success %}✅{% else %}❌{% endif %} {{ r.title }}{% if r.error %} — {{ r.error }}{% endif %}
+            {% endfor %}
+```
+
+### Renew individual loans and notify results
+
+```yaml
+automation:
+  - alias: "Renew individual loans"
+    trigger:
+      - platform: time
+        at: "08:00:00"
+    action:
+      - repeat:
+          for_each: >
+            {{ state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
+               | selectattr('days_remaining', 'lt', 3)
+               | selectattr('can_be_renewed')
+               | list }}
+          sequence:
+            - service: stadtbibliothek.renew_loan
+              data:
+                config_entry_id: !input config_entry_id
+                item_id: "{{ repeat.item.item_id }}"
+              response_variable: result
+            - service: notify.mobile_app
+              data:
+                title: >
+                  {% if result.success %}✅ Verlängert{% else %}❌ Fehlgeschlagen{% endif %}
+                message: >
+                  {{ repeat.item.title }}{% if result.error %} — {{ result.error }}{% endif %}
 ```
 
 ## Development

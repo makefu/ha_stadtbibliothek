@@ -83,30 +83,45 @@ async def test_renew_loan(mock_backend):
     mock_backend.renew_loan.assert_awaited_once_with("12345")
 
 
-async def test_renew_all(mock_backend):
+async def test_renew_all(mock_backend, sample_loans, sample_account):
     coordinator = _make_coordinator()
+    coordinator.data = sample_account
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
         with patch.object(coordinator, "async_request_refresh", new_callable=AsyncMock):
-            count = await coordinator.renew_all()
+            result = await coordinator.renew_all()
 
-    assert count == 2
-    mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=14)
+    assert isinstance(result, dict)
+    assert "renewed" in result
+    assert "total_attempted" in result
+    assert "results" in result
+    # Only the first loan (can_be_renewed=True, days_remaining<=14) is eligible
+    assert result["total_attempted"] == 1
+    assert result["renewed"] == 1
+    assert len(result["results"]) == 1
+    r = result["results"][0]
+    assert r["item_id"] == "12345"
+    assert r["title"] == "Python Crash Course"
+    assert r["success"] is True
+    assert r["error"] is None
 
 
-async def test_renew_all_with_custom_threshold(mock_backend):
+async def test_renew_all_with_custom_threshold(mock_backend, sample_account):
     coordinator = _make_coordinator()
+    coordinator.data = sample_account
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
         with patch.object(coordinator, "async_request_refresh", new_callable=AsyncMock):
-            count = await coordinator.renew_all(days_remaining_threshold=7)
+            result = await coordinator.renew_all(days_remaining_threshold=7)
 
-    assert count == 2
-    mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=7)
+    # days_remaining for first loan is 0 (due today), so it qualifies for threshold=7
+    assert result["total_attempted"] == 1
+    assert result["renewed"] == 1
 
 
-async def test_refresh_required_set_after_renew_all(mock_backend):
+async def test_refresh_required_set_after_renew_all(mock_backend, sample_account):
     coordinator = _make_coordinator()
+    coordinator.data = sample_account
     assert coordinator.refresh_required is False
 
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -127,8 +142,9 @@ async def test_refresh_required_set_after_renew_loan(mock_backend):
     assert coordinator.refresh_required is True
 
 
-async def test_refresh_required_cleared_after_update(mock_backend):
+async def test_refresh_required_cleared_after_update(mock_backend, sample_account):
     coordinator = _make_coordinator()
+    coordinator.data = sample_account
 
     # First do a renewal to set the flag
     with patch.object(coordinator, "_create_backend", return_value=mock_backend):
@@ -144,8 +160,9 @@ async def test_refresh_required_cleared_after_update(mock_backend):
     assert coordinator.refresh_required is False
 
 
-async def test_refresh_required_not_set_on_failed_renewal():
+async def test_refresh_required_not_set_on_failed_renewal(sample_account):
     coordinator = _make_coordinator()
+    coordinator.data = sample_account
     backend = AsyncMock()
     backend.login = AsyncMock(side_effect=RuntimeError("network down"))
 
@@ -154,6 +171,34 @@ async def test_refresh_required_not_set_on_failed_renewal():
             await coordinator.renew_all()
 
     assert coordinator.refresh_required is False
+
+
+async def test_renew_all_failed_renewal_has_error(sample_account):
+    coordinator = _make_coordinator()
+    coordinator.data = sample_account
+    backend = AsyncMock()
+    backend.login = AsyncMock()
+    backend.renew_loan = AsyncMock(return_value=False)
+
+    with patch.object(coordinator, "_create_backend", return_value=backend):
+        with patch.object(coordinator, "async_request_refresh", new_callable=AsyncMock):
+            result = await coordinator.renew_all()
+
+    assert result["renewed"] == 0
+    assert result["total_attempted"] == 1
+    r = result["results"][0]
+    assert r["success"] is False
+    assert "Renewal failed" in r["error"]
+    assert r["item_id"] == "12345"
+    assert r["title"] == "Python Crash Course"
+
+
+async def test_renew_all_no_data_raises_update_failed():
+    coordinator = _make_coordinator()
+    # coordinator.data is None by default
+
+    with pytest.raises(UpdateFailed, match="No loan data"):
+        await coordinator.renew_all()
 
 
 def test_update_interval():

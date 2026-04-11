@@ -76,14 +76,45 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         except Exception as err:
             raise UpdateFailed(f"Error renewing loan: {err}") from err
 
-    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
-        """Renew all renewable loans."""
+    async def renew_all(self, days_remaining_threshold: int = 14) -> dict:
+        """Renew all renewable loans, returning per-item results."""
+        if self.data is None:
+            raise UpdateFailed("No loan data available — run a refresh first")
+
+        eligible = [
+            loan for loan in self.data.loans if loan.can_be_renewed and loan.days_remaining <= days_remaining_threshold
+        ]
+
         backend = self._create_backend()
         try:
             await backend.login(self._username, self._password)
-            count = await backend.renew_all(days_remaining_threshold=days_remaining_threshold)
-            self.refresh_required = True
-            await self.async_request_refresh()
-            return count
         except Exception as err:
             raise UpdateFailed(f"Error renewing loans: {err}") from err
+
+        results: list[dict] = []
+        renewed = 0
+        for loan in eligible:
+            try:
+                ok = await backend.renew_loan(loan.item_id)
+            except Exception as exc:
+                _LOGGER.warning("Renewal failed for %s: %s", loan.item_id, exc)
+                ok = False
+
+            results.append(
+                {
+                    "item_id": loan.item_id,
+                    "title": loan.title,
+                    "success": ok,
+                    "error": None if ok else f"Renewal failed for {loan.item_id}",
+                }
+            )
+            if ok:
+                renewed += 1
+
+        self.refresh_required = True
+        await self.async_request_refresh()
+        return {
+            "renewed": renewed,
+            "total_attempted": len(eligible),
+            "results": results,
+        }

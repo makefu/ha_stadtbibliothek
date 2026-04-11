@@ -36,11 +36,21 @@ ha_const = _make_module(
 # --- homeassistant.core ---
 HomeAssistant = MagicMock
 ServiceCall = MagicMock
+ServiceResponse = dict | None
+
+
+class SupportsResponse:
+    NONE = "none"
+    ONLY = "only"
+    OPTIONAL = "optional"
+
 
 ha_core = _make_module(
     "homeassistant.core",
     HomeAssistant=HomeAssistant,
     ServiceCall=ServiceCall,
+    ServiceResponse=ServiceResponse,
+    SupportsResponse=SupportsResponse,
 )
 
 # --- homeassistant.config_entries ---

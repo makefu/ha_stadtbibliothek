@@ -10,7 +10,7 @@ try:
     import voluptuous as vol
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.const import Platform
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 
     from .const import DOMAIN
     from .coordinator import StadtbibliothekCoordinator
@@ -80,19 +80,37 @@ def _register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_RENEW_LOAN):
         return
 
-    async def handle_renew_loan(call: ServiceCall) -> None:
+    async def handle_renew_loan(call: ServiceCall) -> ServiceResponse:
         coordinator = _get_coordinator(hass, call.data["config_entry_id"])
-        await coordinator.renew_loan(call.data["item_id"])
+        item_id = call.data["item_id"]
+        success = await coordinator.renew_loan(item_id)
+        return {
+            "item_id": item_id,
+            "success": success,
+            "error": None if success else f"Renewal failed for {item_id}",
+        }
 
-    async def handle_renew_all(call: ServiceCall) -> None:
+    async def handle_renew_all(call: ServiceCall) -> ServiceResponse:
         coordinator = _get_coordinator(hass, call.data["config_entry_id"])
         days_remaining_threshold = call.data.get("days_remaining_threshold", 14)
-        await coordinator.renew_all(days_remaining_threshold=days_remaining_threshold)
+        return await coordinator.renew_all(days_remaining_threshold=days_remaining_threshold)
 
     async def handle_force_update(call: ServiceCall) -> None:
         coordinator = _get_coordinator(hass, call.data["config_entry_id"])
         await coordinator.async_request_refresh()
 
-    hass.services.async_register(DOMAIN, SERVICE_RENEW_LOAN, handle_renew_loan, schema=RENEW_LOAN_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_RENEW_ALL, handle_renew_all, schema=RENEW_ALL_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RENEW_LOAN,
+        handle_renew_loan,
+        schema=RENEW_LOAN_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RENEW_ALL,
+        handle_renew_all,
+        schema=RENEW_ALL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(DOMAIN, SERVICE_FORCE_UPDATE, handle_force_update, schema=FORCE_UPDATE_SCHEMA)

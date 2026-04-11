@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -120,4 +121,5 @@ def test_version(capsys, monkeypatch):
 
     output = capsys.readouterr().out
     assert "stadtbibliothek-remseck" in output
-    assert "0.2.1" in output
+    expected_version = json.loads((Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text())["version"]
+    assert expected_version in output

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -111,7 +112,8 @@ class TestVersion:
         assert exc_info.value.code == 0
         out = capsys.readouterr().out
         assert "stadtbibliothek-stuttgart" in out
-        assert "0.2.1" in out
+        expected_version = json.loads((Path(__file__).parent.parent / "custom_components/stadtbibliothek/manifest.json").read_text())["version"]
+        assert expected_version in out
 
 
 class TestNoSubcommand:
