@@ -12,6 +12,27 @@
         ] (system: f nixpkgs.legacyPackages.${system});
     in
     {
+      apps = forAllSystems (
+        pkgs:
+        let
+          pythonWithDeps = pkgs.python313.withPackages (ps: [
+            ps.httpx
+            ps.beautifulsoup4
+            ps.lxml
+            ps.pyyaml
+          ]);
+        in
+        {
+          integration-remseck = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-remseck" ''
+              export PYTHONPATH=${./.}
+              ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_remseck_live.py "$@"
+            ''}";
+          };
+        }
+      );
+
       packages = forAllSystems (pkgs: {
         default = pkgs.stdenvNoCC.mkDerivation {
           pname = "ha-stadtbibliothek";

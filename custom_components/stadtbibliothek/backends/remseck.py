@@ -100,11 +100,11 @@ class RemseckBackend(LibraryBackend):
         title = title_tag.get_text(strip=True) if title_tag else ""
 
         author = _cell_text(row, "td.author")
-        barcode = _cell_text(row, "td.barcode")
+        barcode = _cell_text(row, "td.barcode") or _extract_biblionumber(title_tag)
         media_type = _cell_text(row, "td.itype")
         call_number = _cell_text(row, "td.call_no")
+        library_branch = _cell_text(row, "td.branch")
 
-        checkout_date = _parse_data_order_date(row, "td.checkout_date")
         due_date = _parse_data_order_date(row, "td.date_due")
 
         times_renewed, max_renewals = _parse_renewals(row)
@@ -114,9 +114,9 @@ class RemseckBackend(LibraryBackend):
             title=title,
             item_id=barcode,
             due_date=due_date or date.today(),
-            checkout_date=checkout_date,
             author=author or None,
             media_type=media_type or None,
+            library_branch=library_branch or None,
             call_number=call_number or None,
             can_be_renewed=can_be_renewed,
             times_renewed=times_renewed,
@@ -138,6 +138,18 @@ class RemseckBackend(LibraryBackend):
             amount=_parse_german_decimal(amount_str),
             date=_parse_german_date(created_str),
         )
+
+
+def _extract_biblionumber(title_tag: Tag | None) -> str:
+    """Extract biblionumber from the title link href (e.g. biblionumber=12345)."""
+    if not title_tag:
+        return ""
+    href = title_tag.get("href", "")
+    if isinstance(href, str):
+        m = re.search(r"biblionumber=(\d+)", href)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def _cell_text(row: Tag, selector: str) -> str:
