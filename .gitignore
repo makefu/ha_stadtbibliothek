@@ -7,3 +7,4 @@ result
 .secrets.yml
 *.egg-info/
 dist/
+.claude
