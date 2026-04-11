@@ -2,6 +2,7 @@
 
 Custom component for Stuttgart and Remseck public library accounts.
 
+[![CI](https://github.com/makefu/ha_stadtbibliothek/actions/workflows/ci.yml/badge.svg)](https://github.com/makefu/ha_stadtbibliothek/actions/workflows/ci.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5)](https://hacs.xyz)
 [![HA Version](https://img.shields.io/badge/HA-2024.1%2B-blue)](https://www.home-assistant.io)
 
