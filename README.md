@@ -215,29 +215,32 @@ action:
 
 ### Warn about non-renewable loans due soon
 
-Notify about loans that are due within 7 days but cannot be renewed anymore — these must be returned in person.
+Notify about loans that are due within 7 days but cannot be renewed anymore — these must be returned in person. This example combines loans from both Remseck and Stuttgart accounts.
 
 ```yaml
 alias: "Non-renewable loans due soon"
 trigger:
   - platform: time
     at: "09:00:00"
+variables:
+  all_loans: >
+    {{ (state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans') | default([], true))
+       + (state_attr('sensor.stadtbibliothek_stuttgart_67890_loans', 'loans') | default([], true)) }}
+  due_soon: >
+    {{ all_loans
+       | selectattr('days_remaining', 'lt', 7)
+       | rejectattr('can_be_renewed')
+       | list }}
 condition:
   - condition: template
-    value_template: >
-      {{ state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
-         | selectattr('days_remaining', 'lt', 7)
-         | rejectattr('can_be_renewed')
-         | list | count > 0 }}
+    value_template: "{{ due_soon | count > 0 }}"
 action:
   - service: notify.mobile_app
     data:
-      title: "Rückgabe nötig!"
+      title: "Rückgabe nötig! ({{ due_soon | count }})"
       message: >
         Folgende Medien sind bald fällig und können nicht verlängert werden:
-        {% for loan in state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
-           | selectattr('days_remaining', 'lt', 7)
-           | rejectattr('can_be_renewed') %}
+        {% for loan in due_soon %}
         - {{ loan.title }} — fällig {{ loan.due_date }} ({{ loan.days_remaining }} Tage)
         {% endfor %}
 ```
