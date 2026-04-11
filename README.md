@@ -7,10 +7,12 @@ Custom component for Stuttgart and Remseck public library accounts.
 
 ## Features
 
-- Loan overview for multiple library accounts
+- Loan overview for multiple library accounts with `library` field for identification
 - Warning sensor (days until earliest due date, overdue detection)
 - Fee tracking
-- Loan renewal services (single item or all)
+- Loan renewal services with structured response data (per-item success/failure)
+- Services accept `entity_id` — no need to look up `config_entry_id`
+- Standalone CLI tools (`stadtbibliothek-remseck`, `stadtbibliothek-stuttgart`)
 - Supports Stuttgart (aDIS/BMS) and Remseck (Koha/LMSCloud)
 
 ## Installation
@@ -42,7 +44,7 @@ Each configured account creates three sensors:
 
 - **State:** number of active loans
 - **Attributes:**
-  - `loans` -- list of loan objects containing: `title`, `item_id`, `due_date`, `can_be_renewed`, `days_remaining`, `is_overdue`, plus optional fields like `author`, `checkout_date`, `media_type`, `library_branch`, `times_renewed`, `max_renewals`, `renewals_left`, `call_number`
+  - `loans` -- list of loan objects containing: `title`, `item_id`, `due_date`, `can_be_renewed`, `days_remaining`, `is_overdue`, `library` (e.g. "Remseck", "Stuttgart"), plus optional fields like `author`, `checkout_date`, `media_type`, `library_branch`, `times_renewed`, `max_renewals`, `renewals_left`, `call_number`
 
 ### Warning (`sensor.stadtbibliothek_*_warning`)
 
@@ -71,6 +73,8 @@ Renew a specific item by its barcode/item ID.
 | `item_id` | Barcode or item ID to renew |
 | `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
+**Response** (via `response_variable`): `{item_id, success, error}`
+
 ### `stadtbibliothek.renew_all`
 
 Renew all renewable items for a library account.
@@ -80,6 +84,8 @@ Renew all renewable items for a library account.
 | `entity_id` | Any Stadtbibliothek sensor entity |
 | `days_remaining_threshold` | *(optional, default 14)* Only renew items due within this many days (0-90) |
 | `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
+
+**Response** (via `response_variable`): `{renewed, total_attempted, results}` where `results` is a list of `{item_id, title, success, error}`
 
 ### `stadtbibliothek.force_update`
 
