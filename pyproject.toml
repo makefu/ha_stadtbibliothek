@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ha-stadtbibliothek"
-version = "0.1.0"
+version = "0.2.1"
 requires-python = ">=3.13"
 dependencies = [
     "httpx",
@@ -8,6 +12,16 @@ dependencies = [
     "html5lib",
     "lxml",
 ]
+
+[tool.setuptools.packages.find]
+include = ["custom_components*"]
+
+[tool.setuptools.package-data]
+"custom_components.stadtbibliothek" = ["manifest.json", "services.yaml", "strings.json"]
+
+[project.scripts]
+stadtbibliothek-remseck = "custom_components.stadtbibliothek.cli_remseck:main"
+stadtbibliothek-stuttgart = "custom_components.stadtbibliothek.cli_stuttgart:main"
 
 [tool.ruff]
 line-length = 120

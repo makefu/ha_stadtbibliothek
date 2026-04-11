@@ -2,7 +2,7 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, self, ... }:
     let
       forAllSystems =
         f:
@@ -10,6 +10,9 @@
           "x86_64-linux"
           "aarch64-linux"
         ] (system: f nixpkgs.legacyPackages.${system});
+
+      version =
+        (builtins.fromJSON (builtins.readFile ./custom_components/stadtbibliothek/manifest.json)).version;
     in
     {
       apps = forAllSystems (
@@ -24,6 +27,14 @@
           ]);
         in
         {
+          stadtbibliothek-remseck = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.default}/bin/stadtbibliothek-remseck";
+          };
+          stadtbibliothek-stuttgart = {
+            type = "app";
+            program = "${self.packages.${pkgs.system}.default}/bin/stadtbibliothek-stuttgart";
+          };
           integration-remseck = {
             type = "app";
             program = "${pkgs.writeShellScript "test-remseck" ''
@@ -46,14 +57,29 @@
       );
 
       packages = forAllSystems (pkgs: {
-        default = pkgs.stdenvNoCC.mkDerivation {
+        default = pkgs.python313Packages.buildPythonApplication {
           pname = "ha-stadtbibliothek";
-          version = "0.1.0";
+          inherit version;
           src = ./.;
-          installPhase = ''
-            mkdir -p $out/custom_components
-            cp -r custom_components/stadtbibliothek $out/custom_components/stadtbibliothek
+          format = "pyproject";
+
+          build-system = [ pkgs.python313Packages.setuptools ];
+
+          propagatedBuildInputs = with pkgs.python313Packages; [
+            httpx
+            beautifulsoup4
+            html5lib
+            lxml
+          ];
+
+          doInstallCheck = true;
+          installCheckPhase = ''
+            $out/bin/stadtbibliothek-remseck --version | grep -q "${version}"
+            $out/bin/stadtbibliothek-stuttgart --version | grep -q "${version}"
           '';
+
+          meta.mainProgram = "stadtbibliothek-remseck";
+
           passthru = {
             isHomeAssistantComponent = true;
             domain = "stadtbibliothek";

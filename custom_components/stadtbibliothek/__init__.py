@@ -4,42 +4,47 @@ from __future__ import annotations
 
 import logging
 
-import voluptuous as vol
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
-
-from .const import DOMAIN
-from .coordinator import StadtbibliothekCoordinator
-
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+try:
+    import voluptuous as vol
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.const import Platform
+    from homeassistant.core import HomeAssistant, ServiceCall
 
-SERVICE_RENEW_LOAN = "renew_loan"
-SERVICE_RENEW_ALL = "renew_all"
-SERVICE_FORCE_UPDATE = "force_update"
+    from .const import DOMAIN
+    from .coordinator import StadtbibliothekCoordinator
 
-RENEW_LOAN_SCHEMA = vol.Schema(
-    {
-        vol.Required("config_entry_id"): str,
-        vol.Required("item_id"): str,
-    }
-)
+    _HAS_HOMEASSISTANT = True
+except ImportError:
+    _HAS_HOMEASSISTANT = False
 
-RENEW_ALL_SCHEMA = vol.Schema(
-    {
-        vol.Required("config_entry_id"): str,
-        vol.Optional("days_remaining_threshold", default=14): vol.All(int, vol.Range(min=0, max=90)),
-    }
-)
+if _HAS_HOMEASSISTANT:
+    PLATFORMS = [Platform.SENSOR]
 
-FORCE_UPDATE_SCHEMA = vol.Schema(
-    {
-        vol.Required("config_entry_id"): str,
-    }
-)
+    SERVICE_RENEW_LOAN = "renew_loan"
+    SERVICE_RENEW_ALL = "renew_all"
+    SERVICE_FORCE_UPDATE = "force_update"
+
+    RENEW_LOAN_SCHEMA = vol.Schema(
+        {
+            vol.Required("config_entry_id"): str,
+            vol.Required("item_id"): str,
+        }
+    )
+
+    RENEW_ALL_SCHEMA = vol.Schema(
+        {
+            vol.Required("config_entry_id"): str,
+            vol.Optional("days_remaining_threshold", default=14): vol.All(int, vol.Range(min=0, max=90)),
+        }
+    )
+
+    FORCE_UPDATE_SCHEMA = vol.Schema(
+        {
+            vol.Required("config_entry_id"): str,
+        }
+    )
 
 
 def _get_coordinator(hass: HomeAssistant, config_entry_id: str) -> StadtbibliothekCoordinator:

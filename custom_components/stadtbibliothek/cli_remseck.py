@@ -4,38 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import dataclasses
 import json
 import sys
-from datetime import date
 from pathlib import Path
-from typing import Any
 
 from custom_components.stadtbibliothek.backends.base import AuthenticationError, FeeItem, LoanItem
 from custom_components.stadtbibliothek.backends.remseck import RemseckBackend
+from custom_components.stadtbibliothek.serializers import serialize_fee, serialize_loan
 
 
 def _get_version() -> str:
     manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
     return manifest["version"]
-
-
-def _serialize_loan(loan: LoanItem) -> dict[str, Any]:
-    d = dataclasses.asdict(loan)
-    for key in ("due_date", "checkout_date"):
-        if isinstance(d.get(key), date):
-            d[key] = d[key].isoformat()
-    d["days_remaining"] = loan.days_remaining
-    d["is_overdue"] = loan.is_overdue
-    d["renewals_left"] = loan.renewals_left
-    return d
-
-
-def _serialize_fee(fee: FeeItem) -> dict[str, Any]:
-    d = dataclasses.asdict(fee)
-    if isinstance(d.get("date"), date):
-        d["date"] = d["date"].isoformat()
-    return d
 
 
 def _format_status(loans: list[LoanItem], fees: list[FeeItem]) -> str:
@@ -86,8 +66,8 @@ async def _run_status(args: argparse.Namespace) -> int:
     if args.json:
         total_fees = sum(f.amount for f in fees)
         output = {
-            "loans": [_serialize_loan(loan) for loan in loans],
-            "fees": [_serialize_fee(fee) for fee in fees],
+            "loans": [serialize_loan(loan) for loan in loans],
+            "fees": [serialize_fee(fee) for fee in fees],
             "total_fees": total_fees,
         }
         print(json.dumps(output, indent=2))

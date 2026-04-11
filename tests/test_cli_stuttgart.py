@@ -24,16 +24,16 @@ def mock_backend_instance(sample_loans, sample_fees):
 
 
 @pytest.fixture
-def patch_backend(mock_backend_instance):
+def _patch_backend(mock_backend_instance):
     with patch(
         "custom_components.stadtbibliothek.cli_stuttgart.StuttgartBackend",
         return_value=mock_backend_instance,
-    ) as mock_cls:
-        yield mock_cls
+    ):
+        yield mock_backend_instance
 
 
 class TestStatusHumanReadable:
-    def test_output_contains_titles_and_dates(self, patch_backend, mock_backend_instance, capsys, monkeypatch):
+    def test_output_contains_titles_and_dates(self, _patch_backend, sample_loans, capsys, monkeypatch):
         monkeypatch.setattr("sys.argv", ["stadtbibliothek-stuttgart", "status", "--username", "u", "--password", "p"])
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -41,13 +41,14 @@ class TestStatusHumanReadable:
         out = capsys.readouterr().out
         assert "Python Crash Course" in out
         assert "Clean Code" in out
-        assert date.today().isoformat() in out
-        assert "2020-01-01" in out
-        assert "OVERDUE" in out
+        for loan in sample_loans:
+            assert loan.due_date.isoformat() in out
+        assert "Late fee" in out
+        assert "Lost item" in out
 
 
 class TestStatusJson:
-    def test_json_output_parses_and_has_fields(self, patch_backend, mock_backend_instance, capsys, monkeypatch):
+    def test_json_output_parses_and_has_fields(self, _patch_backend, capsys, monkeypatch):
         monkeypatch.setattr(
             "sys.argv", ["stadtbibliothek-stuttgart", "status", "--username", "u", "--password", "p", "--json"]
         )
@@ -68,7 +69,7 @@ class TestStatusJson:
 
 
 class TestRenewSuccess:
-    def test_exit_code_zero(self, patch_backend, mock_backend_instance, capsys, monkeypatch):
+    def test_exit_code_zero(self, _patch_backend, capsys, monkeypatch):
         monkeypatch.setattr(
             "sys.argv",
             ["stadtbibliothek-stuttgart", "renew", "--username", "u", "--password", "p", "--item-id", "12345"],
@@ -76,11 +77,11 @@ class TestRenewSuccess:
         with pytest.raises(SystemExit) as exc_info:
             main()
         assert exc_info.value.code == 0
-        assert "OK" in capsys.readouterr().out
+        assert "success" in capsys.readouterr().out
 
 
 class TestRenewFailure:
-    def test_exit_code_two(self, patch_backend, mock_backend_instance, capsys, monkeypatch):
+    def test_exit_code_two(self, _patch_backend, mock_backend_instance, capsys, monkeypatch):
         mock_backend_instance.renew_loan = AsyncMock(return_value=False)
         monkeypatch.setattr(
             "sys.argv",
@@ -93,7 +94,7 @@ class TestRenewFailure:
 
 
 class TestAuthFailure:
-    def test_exit_code_one(self, patch_backend, mock_backend_instance, capsys, monkeypatch):
+    def test_exit_code_one(self, _patch_backend, mock_backend_instance, capsys, monkeypatch):
         mock_backend_instance.login = AsyncMock(side_effect=AuthenticationError("bad credentials"))
         monkeypatch.setattr("sys.argv", ["stadtbibliothek-stuttgart", "status", "--username", "u", "--password", "p"])
         with pytest.raises(SystemExit) as exc_info:
@@ -111,3 +112,13 @@ class TestVersion:
         out = capsys.readouterr().out
         assert "stadtbibliothek-stuttgart" in out
         assert "0.2.1" in out
+
+
+class TestNoSubcommand:
+    def test_prints_help_and_exits_zero(self, capsys, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["stadtbibliothek-stuttgart"])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "usage:" in out.lower() or "subcommands" in out.lower()

@@ -87,6 +87,32 @@ Force an immediate data refresh.
 |-------|-------------|
 | `config_entry_id` | The config entry of the library account |
 
+## CLI
+
+Standalone command-line tools for querying and managing library loans without Home Assistant.
+
+### Installation
+
+```sh
+nix run .#stadtbibliothek-remseck -- --help
+nix run .#stadtbibliothek-stuttgart -- --help
+```
+
+### Usage
+
+```sh
+# Show loan status (human-readable)
+stadtbibliothek-remseck status --username 12345 --password mypin
+
+# Show loan status (JSON)
+stadtbibliothek-remseck status --username 12345 --password mypin --json
+
+# Renew specific items
+stadtbibliothek-remseck renew --username 12345 --password mypin --item-id ABC123 --item-id DEF456
+```
+
+Replace `remseck` with `stuttgart` for Stuttgart accounts.
+
 ## Automation Examples
 
 ### Notify when items are due within 3 days
