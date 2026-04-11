@@ -18,6 +18,7 @@
           pythonWithDeps = pkgs.python313.withPackages (ps: [
             ps.httpx
             ps.beautifulsoup4
+            ps.html5lib
             ps.lxml
             ps.pyyaml
           ]);
@@ -28,6 +29,17 @@
             program = "${pkgs.writeShellScript "test-remseck" ''
               export PYTHONPATH=${./.}
               ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_remseck_live.py "$@"
+            ''}";
+          };
+          integration-stuttgart = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-stuttgart" ''
+              if [ -z "''${SECRETS_FILE:-}" ]; then
+                echo "ERROR: SECRETS_FILE environment variable must be set" >&2
+                exit 1
+              fi
+              export PYTHONPATH=${./.}
+              ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_stuttgart_live.py "$@"
             ''}";
           };
         }
@@ -62,28 +74,6 @@
             ]))
           ];
         };
-      });
-
-      apps = forAllSystems (pkgs: {
-        integration-stuttgart =
-          let
-            pythonWithDeps = pkgs.python313.withPackages (ps: [
-              ps.httpx
-              ps.beautifulsoup4
-              ps.html5lib
-              ps.pyyaml
-            ]);
-          in
-          {
-            type = "app";
-            program = "${pkgs.writeShellScript "test-stuttgart" ''
-              if [ -z "''${SECRETS_FILE:-}" ]; then
-                echo "ERROR: SECRETS_FILE environment variable must be set" >&2
-                exit 1
-              fi
-              ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_stuttgart_live.py
-            ''}";
-          };
       });
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
