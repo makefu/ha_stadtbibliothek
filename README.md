@@ -115,97 +115,97 @@ Replace `remseck` with `stuttgart` for Stuttgart accounts.
 
 ## Automation Examples
 
+All examples below can be pasted directly into the Home Assistant automation editor (YAML mode). Replace `sensor.stadtbibliothek_remseck_12345_*` with your actual sensor entity IDs.
+
+> **Finding your `config_entry_id`:** Go to **Settings → Integrations → Stadtbibliothek**, click the three-dot menu on your account, and select **System options**. The URL will contain the config entry ID, e.g. `…/config_entry/abcdef1234567890`. You can also find it via **Developer Tools → Services** when calling a Stadtbibliothek service.
+
 ### Notify when items are due within 3 days
 
 ```yaml
-automation:
-  - alias: "Library due date warning"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.stadtbibliothek_remseck_12345_warning
-        below: 4
-    action:
-      - service: notify.mobile_app
-        data:
-          title: "Library books due soon"
-          message: >
-            {{ state_attr('sensor.stadtbibliothek_remseck_12345_warning', 'items_due_soon') }}
-            item(s) due within 7 days.
-            Earliest due: {{ state_attr('sensor.stadtbibliothek_remseck_12345_warning', 'earliest_due_date') }}
+alias: "Library due date warning"
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.stadtbibliothek_remseck_12345_warning
+    below: 4
+action:
+  - service: notify.mobile_app
+    data:
+      title: "Library books due soon"
+      message: >
+        {{ state_attr('sensor.stadtbibliothek_remseck_12345_warning', 'items_due_soon') }}
+        item(s) due within 7 days.
+        Earliest due: {{ state_attr('sensor.stadtbibliothek_remseck_12345_warning', 'earliest_due_date') }}
 ```
 
 ### Send loan list via notification
 
 ```yaml
-automation:
-  - alias: "Weekly library loan summary"
-    trigger:
-      - platform: time
-        at: "09:00:00"
-    condition:
-      - condition: time
-        weekday: [mon]
-    action:
-      - service: notify.mobile_app
-        data:
-          title: "Library loans ({{ states('sensor.stadtbibliothek_remseck_12345_loans') }})"
-          message: >
-            {% for loan in state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans') %}
-            - {{ loan.title }}{% if loan.author %} ({{ loan.author }}){% endif %} — due {{ loan.due_date }}{% if loan.is_overdue %} ⚠ OVERDUE{% endif %}, {{ loan.renewals_left }} renewals left
-            {% endfor %}
+alias: "Weekly library loan summary"
+trigger:
+  - platform: time
+    at: "09:00:00"
+condition:
+  - condition: time
+    weekday: [mon]
+action:
+  - service: notify.mobile_app
+    data:
+      title: "Library loans ({{ states('sensor.stadtbibliothek_remseck_12345_loans') }})"
+      message: >
+        {% for loan in state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans') %}
+        - {{ loan.title }}{% if loan.author %} ({{ loan.author }}){% endif %} — due {{ loan.due_date }}{% if loan.is_overdue %} ⚠ OVERDUE{% endif %}, {{ loan.renewals_left }} renewals left
+        {% endfor %}
 ```
 
 ### Auto-renew all items when due within 3 days
 
 ```yaml
-automation:
-  - alias: "Auto-renew library books"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.stadtbibliothek_remseck_12345_warning
-        below: 4
-    action:
-      - service: stadtbibliothek.renew_all
-        data:
-          config_entry_id: !input config_entry_id
-          days_remaining_threshold: 3
-        response_variable: renew_result
-      - service: notify.mobile_app
-        data:
-          title: "{{ renew_result.renewed }}/{{ renew_result.total_attempted }} verlängert"
-          message: >
-            {% for r in renew_result.results %}
-            {% if r.success %}✅{% else %}❌{% endif %} {{ r.title }}{% if r.error %} — {{ r.error }}{% endif %}
-            {% endfor %}
+alias: "Auto-renew library books"
+trigger:
+  - platform: numeric_state
+    entity_id: sensor.stadtbibliothek_remseck_12345_warning
+    below: 4
+action:
+  - service: stadtbibliothek.renew_all
+    data:
+      config_entry_id: "abcdef1234567890"
+      days_remaining_threshold: 3
+    response_variable: renew_result
+  - service: notify.mobile_app
+    data:
+      title: "{{ renew_result.renewed }}/{{ renew_result.total_attempted }} verlängert"
+      message: >
+        {% for r in renew_result.results %}
+        {% if r.success %}✅{% else %}❌{% endif %} {{ r.title }}{% if r.error %} — {{ r.error }}{% endif %}
+        {% endfor %}
 ```
 
 ### Renew individual loans and notify results
 
 ```yaml
-automation:
-  - alias: "Renew individual loans"
-    trigger:
-      - platform: time
-        at: "08:00:00"
-    action:
-      - repeat:
-          for_each: >
-            {{ state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
-               | selectattr('days_remaining', 'lt', 3)
-               | selectattr('can_be_renewed')
-               | list }}
-          sequence:
-            - service: stadtbibliothek.renew_loan
-              data:
-                config_entry_id: !input config_entry_id
-                item_id: "{{ repeat.item.item_id }}"
-              response_variable: result
-            - service: notify.mobile_app
-              data:
-                title: >
-                  {% if result.success %}✅ Verlängert{% else %}❌ Fehlgeschlagen{% endif %}
-                message: >
-                  {{ repeat.item.title }}{% if result.error %} — {{ result.error }}{% endif %}
+alias: "Renew individual loans"
+trigger:
+  - platform: time
+    at: "08:00:00"
+action:
+  - repeat:
+      for_each: >
+        {{ state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans')
+           | selectattr('days_remaining', 'lt', 3)
+           | selectattr('can_be_renewed')
+           | list }}
+      sequence:
+        - service: stadtbibliothek.renew_loan
+          data:
+            config_entry_id: "abcdef1234567890"
+            item_id: "{{ repeat.item.item_id }}"
+          response_variable: result
+        - service: notify.mobile_app
+          data:
+            title: >
+              {% if result.success %}✅ Verlängert{% else %}❌ Fehlgeschlagen{% endif %}
+            message: >
+              {{ repeat.item.title }}{% if result.error %} — {{ result.error }}{% endif %}
 ```
 
 ## Development
