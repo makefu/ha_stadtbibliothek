@@ -130,7 +130,7 @@ class StuttgartBackend(LibraryBackend):
 
             # After popping media_type, remaining parts are:
             # [title, author, item_id] or [title, item_id]
-            raw_title = title_parts[0] if title_parts else ""
+            raw_title = title_parts[0].replace("¬", "") if title_parts else ""
             item_id = title_parts[-1] if title_parts else ""
 
             # Author from second part (between title and item_id)

@@ -135,9 +135,10 @@ async def test_get_loans() -> None:
     assert loans[0].max_renewals == 8
     assert loans[0].item_id == "M-CD-K DRE"
 
-    # Row 2: Book without media type prefix, no renewals yet
+    # Row 2: Book with ¬ sort indicators stripped, author from " / " split
     assert loans[1].title == "Der kleine Prinz"
     assert loans[1].author == "Saint-Exupéry, Antoine de"
+    assert loans[1].item_id == "12345678"
     assert loans[1].media_type is None
     assert loans[1].times_renewed == 0
     assert loans[1].can_be_renewed is True
@@ -148,8 +149,10 @@ async def test_get_loans() -> None:
     assert loans[2].times_renewed == 7
     assert loans[2].can_be_renewed is True
 
-    # Row 4: Not renewable, 8 renewals used
+    # Row 4: Not renewable, 8 renewals used, author from " / " split
     assert loans[3].title == "Python Crashkurs"
+    assert loans[3].author == "Matthes, Eric"
+    assert loans[3].item_id == "87654321"
     assert loans[3].can_be_renewed is False
     assert loans[3].times_renewed == 8
     assert loans[3].renewals_left == 0
@@ -176,7 +179,7 @@ async def test_get_loans_parses_extension_info() -> None:
     assert loans[0].times_renewed == 3
     assert loans[0].renewals_left == 5
 
-    # "verlängerbar - Stand ..." with no second line -> 0 renewals
+    # "verlängerbar - Stand ..." with "0 Verlängerungen"
     assert loans[1].can_be_renewed is True
     assert loans[1].times_renewed == 0
     assert loans[1].renewals_left == 8
@@ -220,3 +223,23 @@ async def test_get_loans_skips_media_type_prefix() -> None:
 
     # No prefix
     assert loans[3].media_type is None
+
+
+@respx.mock
+async def test_get_loans_strips_sort_indicators() -> None:
+    """Non-sort indicator characters (¬) are stripped from titles."""
+    _mock_login_flow(respx)
+    respx.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
+    )
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    # Row 2 fixture has ¬Der¬ kleine Prinz — ¬ must be stripped
+    assert "¬" not in loans[1].title
+    assert loans[1].title == "Der kleine Prinz"
