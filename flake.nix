@@ -64,6 +64,26 @@
         };
       });
 
+      apps = forAllSystems (pkgs: {
+        integration-stuttgart =
+          let
+            pythonWithDeps = pkgs.python313.withPackages (ps: [
+              ps.httpx
+              ps.beautifulsoup4
+              ps.html5lib
+              ps.pyyaml
+            ]);
+          in
+          {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-stuttgart" ''
+              SECRETS_FILE="''${SECRETS_FILE:-$PWD/.secrets.yml}"
+              export SECRETS_FILE
+              ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_stuttgart_live.py
+            ''}";
+          };
+      });
+
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
     };
 }
