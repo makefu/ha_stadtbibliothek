@@ -1,0 +1,22 @@
+[project]
+name = "ha-stadtbibliothek"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx",
+    "beautifulsoup4",
+    "html5lib",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.mypy]
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

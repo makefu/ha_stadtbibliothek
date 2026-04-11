@@ -1,0 +1,13 @@
+{
+    "domain": "stadtbibliothek",
+    "name": "Stadtbibliothek",
+    "codeowners": ["@makefu"],
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/makefu/ha_stadtbibliothek",
+    "integration_type": "hub",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "https://github.com/makefu/ha_stadtbibliothek/issues",
+    "requirements": ["beautifulsoup4", "html5lib"],
+    "version": "0.1.0"
+}

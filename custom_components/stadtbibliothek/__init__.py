@@ -1,0 +1,1 @@
+"""Stadtbibliothek integration."""
