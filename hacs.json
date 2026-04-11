@@ -1,5 +1,6 @@
 {
-  "name": "Stadtbibliothek",
+  "name": "Stadtbibliotheken Stuttgart und Remseck",
   "render_readme": true,
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2024.1.0",
+  "country": [ "DE" ]
 }
