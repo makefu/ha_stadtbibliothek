@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import date
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,9 +14,31 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .backends.base import AccountInfo
+from .backends.base import AccountInfo, FeeItem, LoanItem
 from .const import CONF_LIBRARY_TYPE, CONF_USERNAME, DOMAIN
 from .coordinator import StadtbibliothekCoordinator
+
+
+def _serialize_loan(loan: LoanItem) -> dict[str, Any]:
+    """Serialize a LoanItem including computed properties and ISO date strings."""
+    d = dataclasses.asdict(loan)
+    # Convert date objects to ISO strings
+    for key in ("due_date", "checkout_date"):
+        if isinstance(d.get(key), date):
+            d[key] = d[key].isoformat()
+    # Add computed properties
+    d["days_remaining"] = loan.days_remaining
+    d["is_overdue"] = loan.is_overdue
+    d["renewals_left"] = loan.renewals_left
+    return d
+
+
+def _serialize_fee(fee: FeeItem) -> dict[str, Any]:
+    """Serialize a FeeItem with ISO date strings."""
+    d = dataclasses.asdict(fee)
+    if isinstance(d.get("date"), date):
+        d["date"] = d["date"].isoformat()
+    return d
 
 
 async def async_setup_entry(
@@ -85,7 +109,7 @@ class LoansSensor(StadtbibliothekEntity):
         if self._account is None:
             return {}
         return {
-            "loans": [dataclasses.asdict(loan) for loan in self._account.loans],
+            "loans": [_serialize_loan(loan) for loan in self._account.loans],
         }
 
 
@@ -146,5 +170,5 @@ class FeesSensor(StadtbibliothekEntity):
         if self._account is None:
             return {}
         return {
-            "fee_items": [dataclasses.asdict(fee) for fee in self._account.fees],
+            "fee_items": [_serialize_fee(fee) for fee in self._account.fees],
         }

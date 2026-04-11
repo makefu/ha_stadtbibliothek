@@ -33,6 +33,27 @@ class TestLoansSensor:
         assert len(attrs["loans"]) == 2
         assert attrs["loans"][0]["title"] == "Python Crash Course"
 
+    def test_attributes_include_computed_properties(self, sample_account):
+        """Loan attributes should include days_remaining, is_overdue, renewals_left."""
+        sensor = _make_sensor(LoansSensor, sample_account)
+        attrs = sensor.extra_state_attributes
+        loan = attrs["loans"][0]
+        assert "days_remaining" in loan
+        assert "is_overdue" in loan
+        assert "renewals_left" in loan
+        assert isinstance(loan["days_remaining"], int)
+        assert isinstance(loan["is_overdue"], bool)
+
+    def test_attributes_dates_are_iso_strings(self, sample_account):
+        """Date fields should be serialized as ISO format strings, not date objects."""
+        sensor = _make_sensor(LoansSensor, sample_account)
+        attrs = sensor.extra_state_attributes
+        loan = attrs["loans"][0]
+        assert isinstance(loan["due_date"], str)
+        # The overdue loan has a checkout_date of None, first loan has date.today()
+        # so check the due_date format
+        date.fromisoformat(loan["due_date"])  # should not raise
+
     def test_icon(self, sample_account):
         sensor = _make_sensor(LoansSensor, sample_account)
         assert sensor._attr_icon == "mdi:bookshelf"
@@ -108,6 +129,14 @@ class TestFeesSensor:
         assert len(attrs["fee_items"]) == 2
         assert attrs["fee_items"][0]["description"] == "Late fee"
         assert attrs["fee_items"][0]["amount"] == 1.50
+
+    def test_fee_dates_are_iso_strings(self, sample_account):
+        """Fee date fields should be serialized as ISO format strings."""
+        sensor = _make_sensor(FeesSensor, sample_account)
+        attrs = sensor.extra_state_attributes
+        fee = attrs["fee_items"][0]
+        assert isinstance(fee["date"], str)
+        date.fromisoformat(fee["date"])
 
     def test_icon(self, sample_account):
         sensor = _make_sensor(FeesSensor, sample_account)

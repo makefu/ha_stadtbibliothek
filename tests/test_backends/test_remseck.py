@@ -164,13 +164,22 @@ async def test_get_fees_none(no_fees_html: str) -> None:
 # --- renew_all with days_remaining_threshold ---
 
 
-def _loan(item_id: str, due_date: date, max_renewals: int = 3, times_renewed: int = 0) -> LoanItem:
+def _loan(
+    item_id: str,
+    due_date: date,
+    max_renewals: int = 3,
+    times_renewed: int = 0,
+    can_be_renewed: bool | None = None,
+) -> LoanItem:
+    if can_be_renewed is None:
+        can_be_renewed = times_renewed < max_renewals
     return LoanItem(
         title=f"Book {item_id}",
         item_id=item_id,
         due_date=due_date,
         max_renewals=max_renewals,
         times_renewed=times_renewed,
+        can_be_renewed=can_be_renewed,
     )
 
 
@@ -233,6 +242,48 @@ async def test_renew_all_skips_no_renewals_left() -> None:
         _loan("A", date(2026, 4, 14), max_renewals=3, times_renewed=3),  # 3 days but 0 renewals left
     ]
     backend.get_loans = AsyncMock(return_value=loans)
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all()
+
+    assert count == 0
+    backend.renew_loan.assert_not_awaited()
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_renews_unlimited_renewals() -> None:
+    """Loans with max_renewals=None (unlimited) should still be renewed if can_be_renewed."""
+    backend = RemseckBackend()
+    loan = LoanItem(
+        title="Unlimited Book",
+        item_id="U1",
+        due_date=date(2026, 4, 14),  # 3 days left
+        max_renewals=None,
+        times_renewed=0,
+        can_be_renewed=True,
+    )
+    backend.get_loans = AsyncMock(return_value=[loan])
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all()
+
+    assert count == 1
+    backend.renew_loan.assert_awaited_once_with("U1")
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_skips_not_renewable() -> None:
+    """Loans with can_be_renewed=False are skipped regardless of renewals_left."""
+    backend = RemseckBackend()
+    loan = LoanItem(
+        title="Blocked Book",
+        item_id="B1",
+        due_date=date(2026, 4, 14),  # 3 days left
+        max_renewals=3,
+        times_renewed=1,
+        can_be_renewed=False,  # explicitly blocked
+    )
+    backend.get_loans = AsyncMock(return_value=[loan])
     backend.renew_loan = AsyncMock(return_value=True)
 
     count = await backend.renew_all()

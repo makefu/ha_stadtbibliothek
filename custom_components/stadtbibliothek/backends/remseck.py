@@ -86,11 +86,7 @@ class RemseckBackend(LibraryBackend):
         loans = await self.get_loans()
         renewed = 0
         for loan in loans:
-            if (
-                loan.renewals_left is not None
-                and loan.renewals_left > 0
-                and loan.days_remaining <= days_remaining_threshold
-            ):
+            if loan.can_be_renewed and loan.days_remaining <= days_remaining_threshold:
                 if await self.renew_loan(loan.item_id):
                     renewed += 1
         return renewed
