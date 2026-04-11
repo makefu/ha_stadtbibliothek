@@ -16,11 +16,14 @@ from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBacken
 
 
 def load_credentials() -> tuple[str, str]:
-    env_path = os.environ.get("SECRETS_FILE")
-    if env_path:
-        secrets_path = Path(env_path)
+    if len(sys.argv) > 1:
+        secrets_path = Path(sys.argv[1])
+    elif "SECRETS_FILE" in os.environ:
+        secrets_path = Path(os.environ["SECRETS_FILE"])
     else:
-        secrets_path = Path(__file__).resolve().parents[2] / ".secrets.yml"
+        print("Usage: test_stuttgart_live.py <secrets.yml>")
+        print("  or set SECRETS_FILE environment variable")
+        sys.exit(2)
     if not secrets_path.exists():
         print(f"ERROR: secrets file not found at {secrets_path}")
         sys.exit(1)

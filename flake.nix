@@ -77,8 +77,10 @@
           {
             type = "app";
             program = "${pkgs.writeShellScript "test-stuttgart" ''
-              SECRETS_FILE="''${SECRETS_FILE:-$PWD/.secrets.yml}"
-              export SECRETS_FILE
+              if [ -z "''${SECRETS_FILE:-}" ]; then
+                echo "ERROR: SECRETS_FILE environment variable must be set" >&2
+                exit 1
+              fi
               ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_stuttgart_live.py
             ''}";
           };

@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from html import unescape
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -126,9 +127,17 @@ class StuttgartBackend(LibraryBackend):
             if title_parts and _MEDIA_TYPE_PATTERN.match(title_parts[0]):
                 media_type = title_parts.pop(0).strip("[]")
 
-            title = title_parts[0] if title_parts else ""
+            # After popping media_type, remaining parts are:
+            # [title, call_number, item_id] or [title, item_id]
+            raw_title = title_parts[0] if title_parts else ""
             item_id = title_parts[-1] if title_parts else ""
-            author = title_parts[1] if len(title_parts) > 2 else None
+            call_number = title_parts[1] if len(title_parts) > 2 else None
+
+            # Author is embedded in the title after " / "
+            author = None
+            title = raw_title
+            if " / " in raw_title:
+                title, author = raw_title.split(" / ", 1)
 
             # Parse extension column
             ext_parts = self._split_br(cells[4])
@@ -152,7 +161,7 @@ class StuttgartBackend(LibraryBackend):
                     can_be_renewed=can_be_renewed,
                     times_renewed=times_renewed,
                     max_renewals=self.MAX_RENEWALS,
-                    call_number=item_id,
+                    call_number=call_number,
                 )
             )
 
@@ -187,7 +196,7 @@ class StuttgartBackend(LibraryBackend):
         for content in cell.decode_contents().split("<br"):
             # strip the closing > or /> from the br tag remnant
             text = re.sub(r"^[^>]*>", "", content) if not content.startswith("<") else content
-            text = re.sub(r"<[^>]+>", "", text).strip()
+            text = unescape(re.sub(r"<[^>]+>", "", text)).strip()
             if text:
                 parts.append(text)
         return parts
