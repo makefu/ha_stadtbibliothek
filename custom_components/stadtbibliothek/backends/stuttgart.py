@@ -173,7 +173,7 @@ class StuttgartBackend(LibraryBackend):
     async def renew_loan(self, item_id: str) -> bool:
         return False
 
-    async def renew_all(self) -> int:
+    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         return 0
 
     async def close(self) -> None:

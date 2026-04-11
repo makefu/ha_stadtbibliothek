@@ -25,6 +25,15 @@ renew_all:
       required: true
       selector:
         text:
+    days_remaining_threshold:
+      name: Days Remaining Threshold
+      description: Only renew loans with this many days or fewer remaining before due date.
+      default: 14
+      selector:
+        number:
+          min: 0
+          max: 90
+          step: 1
 
 force_update:
   name: Force Update

@@ -31,6 +31,7 @@ RENEW_LOAN_SCHEMA = vol.Schema(
 RENEW_ALL_SCHEMA = vol.Schema(
     {
         vol.Required("config_entry_id"): str,
+        vol.Optional("days_remaining_threshold", default=14): vol.All(int, vol.Range(min=0, max=90)),
     }
 )
 
@@ -80,7 +81,8 @@ def _register_services(hass: HomeAssistant) -> None:
 
     async def handle_renew_all(call: ServiceCall) -> None:
         coordinator = _get_coordinator(hass, call.data["config_entry_id"])
-        await coordinator.renew_all()
+        days_remaining_threshold = call.data.get("days_remaining_threshold", 14)
+        await coordinator.renew_all(days_remaining_threshold=days_remaining_threshold)
 
     async def handle_force_update(call: ServiceCall) -> None:
         coordinator = _get_coordinator(hass, call.data["config_entry_id"])

@@ -2,12 +2,14 @@
 
 from datetime import date
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 import respx
+from freezegun import freeze_time
 
-from custom_components.stadtbibliothek.backends.base import AuthenticationError
+from custom_components.stadtbibliothek.backends.base import AuthenticationError, LoanItem
 from custom_components.stadtbibliothek.backends.remseck import RemseckBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -157,3 +159,83 @@ async def test_get_fees_none(no_fees_html: str) -> None:
         await backend.close()
 
     assert fees == []
+
+
+# --- renew_all with days_remaining_threshold ---
+
+
+def _loan(item_id: str, due_date: date, max_renewals: int = 3, times_renewed: int = 0) -> LoanItem:
+    return LoanItem(
+        title=f"Book {item_id}",
+        item_id=item_id,
+        due_date=due_date,
+        max_renewals=max_renewals,
+        times_renewed=times_renewed,
+    )
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_default_threshold_only_renews_due_within_14_days() -> None:
+    """With default threshold=14, only loans due within 14 days are renewed."""
+    backend = RemseckBackend()
+    loans = [
+        _loan("A", date(2026, 4, 20), max_renewals=3, times_renewed=0),  # 9 days left -> renew
+        _loan("B", date(2026, 4, 30), max_renewals=3, times_renewed=0),  # 19 days left -> skip
+    ]
+    backend.get_loans = AsyncMock(return_value=loans)
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all()
+
+    assert count == 1
+    backend.renew_loan.assert_awaited_once_with("A")
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_custom_threshold() -> None:
+    """Custom threshold=5 only renews loans due within 5 days."""
+    backend = RemseckBackend()
+    loans = [
+        _loan("A", date(2026, 4, 14), max_renewals=3, times_renewed=0),  # 3 days left -> renew
+        _loan("B", date(2026, 4, 20), max_renewals=3, times_renewed=0),  # 9 days left -> skip
+    ]
+    backend.get_loans = AsyncMock(return_value=loans)
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all(days_remaining_threshold=5)
+
+    assert count == 1
+    backend.renew_loan.assert_awaited_once_with("A")
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_renews_overdue_books() -> None:
+    """Overdue books (negative days_remaining) are always renewed."""
+    backend = RemseckBackend()
+    loans = [
+        _loan("A", date(2026, 4, 1), max_renewals=3, times_renewed=0),  # -10 days -> overdue -> renew
+        _loan("B", date(2026, 4, 30), max_renewals=3, times_renewed=0),  # 19 days left -> skip
+    ]
+    backend.get_loans = AsyncMock(return_value=loans)
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all(days_remaining_threshold=5)
+
+    assert count == 1
+    backend.renew_loan.assert_awaited_once_with("A")
+
+
+@freeze_time("2026-04-11")
+async def test_renew_all_skips_no_renewals_left() -> None:
+    """Loans with no renewals left are skipped even if within threshold."""
+    backend = RemseckBackend()
+    loans = [
+        _loan("A", date(2026, 4, 14), max_renewals=3, times_renewed=3),  # 3 days but 0 renewals left
+    ]
+    backend.get_loans = AsyncMock(return_value=loans)
+    backend.renew_loan = AsyncMock(return_value=True)
+
+    count = await backend.renew_all()
+
+    assert count == 0
+    backend.renew_loan.assert_not_awaited()

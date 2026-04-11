@@ -80,7 +80,7 @@ class LibraryBackend(ABC):
         """Renew a single loan. Returns True on success."""
 
     @abstractmethod
-    async def renew_all(self) -> int:
+    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         """Renew all renewable loans. Returns count renewed."""
 
     async def close(self) -> None:

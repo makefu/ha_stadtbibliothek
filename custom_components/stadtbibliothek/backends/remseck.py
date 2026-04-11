@@ -82,11 +82,15 @@ class RemseckBackend(LibraryBackend):
         )
         return resp.status_code == 200
 
-    async def renew_all(self) -> int:
+    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         loans = await self.get_loans()
         renewed = 0
         for loan in loans:
-            if loan.renewals_left > 0:
+            if (
+                loan.renewals_left is not None
+                and loan.renewals_left > 0
+                and loan.days_remaining <= days_remaining_threshold
+            ):
                 if await self.renew_loan(loan.item_id):
                     renewed += 1
         return renewed

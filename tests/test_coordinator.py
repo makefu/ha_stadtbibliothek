@@ -96,7 +96,19 @@ async def test_renew_all(mock_get_client, mock_backend):
             count = await coordinator.renew_all()
 
     assert count == 2
-    mock_backend.renew_all.assert_awaited_once()
+    mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=14)
+
+
+@patch("custom_components.stadtbibliothek.coordinator.get_async_client")
+async def test_renew_all_with_custom_threshold(mock_get_client, mock_backend):
+    coordinator = _make_coordinator()
+
+    with patch.object(coordinator, "_create_backend", return_value=mock_backend):
+        with patch.object(coordinator, "async_request_refresh", new_callable=AsyncMock):
+            count = await coordinator.renew_all(days_remaining_threshold=7)
+
+    assert count == 2
+    mock_backend.renew_all.assert_awaited_once_with(days_remaining_threshold=7)
 
 
 def test_update_interval():

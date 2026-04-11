@@ -75,12 +75,12 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         except Exception as err:
             raise UpdateFailed(f"Error renewing loan: {err}") from err
 
-    async def renew_all(self) -> int:
+    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         """Renew all renewable loans."""
         backend = self._create_backend()
         try:
             await backend.login(self._username, self._password)
-            count = await backend.renew_all()
+            count = await backend.renew_all(days_remaining_threshold=days_remaining_threshold)
             await self.async_request_refresh()
             return count
         except Exception as err:
