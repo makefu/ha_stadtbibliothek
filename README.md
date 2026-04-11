@@ -42,7 +42,7 @@ Each configured account creates three sensors:
 
 - **State:** number of active loans
 - **Attributes:**
-  - `loans` -- list of loan objects with title, author, due_date, days_remaining, renewable, item_id, etc.
+  - `loans` -- list of loan objects containing: `title`, `item_id`, `due_date`, `can_be_renewed`, `days_remaining`, `is_overdue`, plus optional fields like `author`, `checkout_date`, `media_type`, `library_branch`, `times_renewed`, `max_renewals`, `renewals_left`, `call_number`
 
 ### Warning (`sensor.stadtbibliothek_*_warning`)
 
@@ -51,6 +51,7 @@ Each configured account creates three sensors:
   - `overdue_count` -- number of overdue items
   - `items_due_soon` -- items due within 7 days
   - `earliest_due_date` -- ISO date of earliest due item
+  - `refresh_required` -- bool, indicates a manual HA refresh is recommended after renewals
 
 ### Fees (`sensor.stadtbibliothek_*_fees`)
 
@@ -76,6 +77,7 @@ Renew all renewable items for a library account.
 | Field | Description |
 |-------|-------------|
 | `config_entry_id` | The config entry of the library account |
+| `days_remaining_threshold` | *(optional, default 14)* Only renew items due within this many days (0-90) |
 
 ### `stadtbibliothek.force_update`
 
