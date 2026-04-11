@@ -55,6 +55,10 @@ class TestLoansSensor:
         # so check the due_date format
         date.fromisoformat(loan["due_date"])  # should not raise
 
+    def test_name(self, sample_account):
+        sensor = _make_sensor(LoansSensor, sample_account)
+        assert sensor._attr_name == "Loans"
+
     def test_icon(self, sample_account):
         sensor = _make_sensor(LoansSensor, sample_account)
         assert sensor._attr_icon == "mdi:bookshelf"
@@ -110,6 +114,10 @@ class TestWarningSensor:
         attrs = sensor.extra_state_attributes
         assert attrs["refresh_required"] is True
 
+    def test_name(self, sample_account):
+        sensor = _make_sensor(WarningSensor, sample_account)
+        assert sensor._attr_name == "Warning"
+
     def test_items_due_soon(self):
         loans = [
             LoanItem(title="A", item_id="1", due_date=date.today()),  # 0 days = due soon
@@ -149,6 +157,10 @@ class TestFeesSensor:
         fee = attrs["fee_items"][0]
         assert isinstance(fee["date"], str)
         date.fromisoformat(fee["date"])
+
+    def test_name(self, sample_account):
+        sensor = _make_sensor(FeesSensor, sample_account)
+        assert sensor._attr_name == "Fees"
 
     def test_icon(self, sample_account):
         sensor = _make_sensor(FeesSensor, sample_account)

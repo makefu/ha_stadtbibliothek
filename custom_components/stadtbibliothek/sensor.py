@@ -91,6 +91,7 @@ class StadtbibliothekEntity(CoordinatorEntity[StadtbibliothekCoordinator], Senso
 class LoansSensor(StadtbibliothekEntity):
     """Number of active loans."""
 
+    _attr_name = "Loans"
     _attr_icon = "mdi:bookshelf"
     _attr_native_unit_of_measurement = "loans"
 
@@ -116,6 +117,7 @@ class LoansSensor(StadtbibliothekEntity):
 class WarningSensor(StadtbibliothekEntity):
     """Days until earliest due date."""
 
+    _attr_name = "Warning"
     _attr_native_unit_of_measurement = "days"
 
     def __init__(self, coordinator, config_entry, lib_type, username) -> None:
@@ -153,6 +155,7 @@ class WarningSensor(StadtbibliothekEntity):
 class FeesSensor(StadtbibliothekEntity):
     """Total outstanding fees."""
 
+    _attr_name = "Fees"
     _attr_icon = "mdi:currency-eur"
     _attr_native_unit_of_measurement = "EUR"
 
