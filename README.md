@@ -134,6 +134,27 @@ automation:
             Earliest due: {{ state_attr('sensor.stadtbibliothek_remseck_12345_warning', 'earliest_due_date') }}
 ```
 
+### Send loan list via notification
+
+```yaml
+automation:
+  - alias: "Weekly library loan summary"
+    trigger:
+      - platform: time
+        at: "09:00:00"
+    condition:
+      - condition: time
+        weekday: [mon]
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "Library loans ({{ states('sensor.stadtbibliothek_remseck_12345_loans') }})"
+          message: >
+            {% for loan in state_attr('sensor.stadtbibliothek_remseck_12345_loans', 'loans') %}
+            - {{ loan.title }}{% if loan.author %} ({{ loan.author }}){% endif %} — due {{ loan.due_date }}{% if loan.is_overdue %} ⚠ OVERDUE{% endif %}, {{ loan.renewals_left }} renewals left
+            {% endfor %}
+```
+
 ### Auto-renew all items when due within 2 days
 
 ```yaml
