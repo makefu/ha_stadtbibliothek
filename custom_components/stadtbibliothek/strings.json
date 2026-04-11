@@ -1,0 +1,22 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Set up Stadtbibliothek",
+                "description": "Enter your library credentials.",
+                "data": {
+                    "library_type": "Library",
+                    "username": "Username / Card Number",
+                    "password": "Password / PIN"
+                }
+            }
+        },
+        "error": {
+            "invalid_auth": "Invalid credentials. Please check username and password.",
+            "cannot_connect": "Unable to connect to the library. Please try again later."
+        },
+        "abort": {
+            "already_configured": "This account is already configured."
+        }
+    }
+}

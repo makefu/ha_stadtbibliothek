@@ -46,9 +46,7 @@ def no_fees_html() -> str:
 @respx.mock
 async def test_login_success(checkouts_html: str) -> None:
     """Successful login returns the account page (no login form)."""
-    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
-        return_value=httpx.Response(200, html=checkouts_html)
-    )
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
     backend = RemseckBackend()
     try:
         await backend.login("12345", "01.01.1990")
@@ -60,9 +58,7 @@ async def test_login_success(checkouts_html: str) -> None:
 @respx.mock
 async def test_login_failure(login_html: str) -> None:
     """Failed login returns the login page again -> AuthenticationError."""
-    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
-        return_value=httpx.Response(200, html=login_html)
-    )
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=login_html))
     backend = RemseckBackend()
     try:
         with pytest.raises(AuthenticationError):
@@ -74,9 +70,7 @@ async def test_login_failure(login_html: str) -> None:
 @respx.mock
 async def test_get_loans(checkouts_html: str) -> None:
     """Parse the checkouts table into LoanItem objects."""
-    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
-        return_value=httpx.Response(200, html=checkouts_html)
-    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
     backend = RemseckBackend()
     try:
         loans = await backend.get_loans()
@@ -121,9 +115,7 @@ async def test_get_loans(checkouts_html: str) -> None:
 @respx.mock
 async def test_get_loans_empty(no_checkouts_html: str) -> None:
     """No checkouts table present -> empty list."""
-    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(
-        return_value=httpx.Response(200, html=no_checkouts_html)
-    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=no_checkouts_html))
     backend = RemseckBackend()
     try:
         loans = await backend.get_loans()
@@ -136,9 +128,7 @@ async def test_get_loans_empty(no_checkouts_html: str) -> None:
 @respx.mock
 async def test_get_fees(fees_html: str) -> None:
     """Parse the fees table into FeeItem objects."""
-    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(
-        return_value=httpx.Response(200, html=fees_html)
-    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(return_value=httpx.Response(200, html=fees_html))
     backend = RemseckBackend()
     try:
         fees = await backend.get_fees()
@@ -159,9 +149,7 @@ async def test_get_fees(fees_html: str) -> None:
 @respx.mock
 async def test_get_fees_none(no_fees_html: str) -> None:
     """No fees table present -> empty list."""
-    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(
-        return_value=httpx.Response(200, html=no_fees_html)
-    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(return_value=httpx.Response(200, html=no_fees_html))
     backend = RemseckBackend()
     try:
         fees = await backend.get_fees()

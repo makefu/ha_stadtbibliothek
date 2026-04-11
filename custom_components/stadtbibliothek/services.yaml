@@ -1,0 +1,38 @@
+renew_loan:
+  name: Renew Loan
+  description: Renew a single library loan by item ID.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The config entry ID of the library account.
+      required: true
+      selector:
+        text:
+    item_id:
+      name: Item ID
+      description: The barcode or item ID of the loan to renew.
+      required: true
+      selector:
+        text:
+
+renew_all:
+  name: Renew All Loans
+  description: Renew all renewable loans for a library account.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The config entry ID of the library account.
+      required: true
+      selector:
+        text:
+
+force_update:
+  name: Force Update
+  description: Force an immediate data refresh for a library account.
+  fields:
+    config_entry_id:
+      name: Config Entry ID
+      description: The config entry ID of the library account.
+      required: true
+      selector:
+        text:
