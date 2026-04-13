@@ -229,7 +229,7 @@ class StuttgartBackend(LibraryBackend):
 
         return True
 
-    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
+    async def renew_all(self, days_remaining_threshold: int = 7) -> int:
         loans = await self.get_loans()
         renewed = 0
         for loan in loans:
