@@ -186,6 +186,9 @@ class StuttgartBackend(LibraryBackend):
         action_url = f"{self.BASE_URL}{form.attrs['action']}"
         data = self._extract_hidden_inputs(form)
 
+        # Remove all submit button values — only the clicked button should be sent
+        data = {k: v for k, v in data.items() if not k.startswith("textButton")}
+
         # Find the checkbox whose row contains the target item_id
         table = soup.select_one("table.rTable_table tbody")
         if table is None:
@@ -201,13 +204,15 @@ class StuttgartBackend(LibraryBackend):
                 checkbox = cells[0].find("input", {"type": "checkbox"})
                 if checkbox:
                     checkbox_name = checkbox.get("name")
-                    data[checkbox_name] = str(checkbox.get("value", ""))
+                    # Browsers send "on" for checked checkboxes without a value attribute
+                    data[checkbox_name] = str(checkbox.get("value")) if checkbox.get("value") else "on"
                 break
 
         if checkbox_name is None:
             raise RenewalError(f"Item {item_id} not found in loan table")
 
-        data["textButton"] = "Verlängern"
+        # "Markierte Medien verlängern" = renew selected items
+        data["textButton$1"] = "Markierte Medien verlängern"
 
         resp = await self._client.post(
             action_url,

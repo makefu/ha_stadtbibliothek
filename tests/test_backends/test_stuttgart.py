@@ -292,7 +292,7 @@ async def test_renew_loan_sends_correct_checkbox() -> None:
     last_post = respx.calls[-1]
     body = last_post.request.content.decode()
     assert "check_1=1" in body
-    assert "textButton=Verl" in body  # URL-encoded Verlängern
+    assert "textButton%241=Markierte" in body  # textButton$1=Markierte Medien verlängern
 
 
 @respx.mock
