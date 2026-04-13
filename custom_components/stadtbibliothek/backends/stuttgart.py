@@ -7,7 +7,7 @@ from html import unescape
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem
+from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem, RenewalError
 
 # Fields that indicate media type prefixes in title column
 _MEDIA_TYPE_PATTERN = re.compile(r"^\[.+\]$")
@@ -172,10 +172,69 @@ class StuttgartBackend(LibraryBackend):
         return []
 
     async def renew_loan(self, item_id: str) -> bool:
-        return False
+        if not self._ausleihen_url:
+            raise RuntimeError("Must call login() before renew_loan()")
+
+        resp = await self._client.get(self._ausleihen_url)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        form = soup.find("form")
+        if not isinstance(form, Tag):
+            raise RuntimeError("No form found on Ausleihen page")
+
+        action_url = f"{self.BASE_URL}{form.attrs['action']}"
+        data = self._extract_hidden_inputs(form)
+
+        # Find the checkbox whose row contains the target item_id
+        table = soup.select_one("table.rTable_table tbody")
+        if table is None:
+            return False
+
+        checkbox_name = None
+        for row in table.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 5:
+                continue
+            title_text = cells[3].get_text()
+            if item_id in title_text:
+                checkbox = cells[0].find("input", {"type": "checkbox"})
+                if checkbox:
+                    checkbox_name = checkbox.get("name")
+                    data[checkbox_name] = str(checkbox.get("value", ""))
+                break
+
+        if checkbox_name is None:
+            raise RenewalError(f"Item {item_id} not found in loan table")
+
+        data["textButton"] = "Verlängern"
+
+        resp = await self._client.post(
+            action_url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+
+        # Check for error messages in the response
+        result_soup = BeautifulSoup(resp.text, features="html.parser")
+        error_div = result_soup.select_one("div.aDISError")
+        if error_div:
+            raise RenewalError(error_div.get_text(strip=True))
+
+        return True
 
     async def renew_all(self, days_remaining_threshold: int = 14) -> int:
-        return 0
+        loans = await self.get_loans()
+        renewed = 0
+        for loan in loans:
+            if loan.can_be_renewed and loan.days_remaining <= days_remaining_threshold:
+                try:
+                    if await self.renew_loan(loan.item_id):
+                        renewed += 1
+                except RenewalError:
+                    pass
+        return renewed
 
     async def close(self) -> None:
         await self._client.aclose()

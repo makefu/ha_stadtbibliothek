@@ -106,7 +106,14 @@ def _register_services(hass: HomeAssistant) -> None:
         config_entry_id = _resolve_config_entry_id(hass, call.data)
         coordinator = _get_coordinator(hass, config_entry_id)
         item_id = call.data["item_id"]
-        success = await coordinator.renew_loan(item_id)
+        try:
+            success = await coordinator.renew_loan(item_id)
+        except Exception as err:
+            return {
+                "item_id": item_id,
+                "success": False,
+                "error": str(err),
+            }
         return {
             "item_id": item_id,
             "success": success,

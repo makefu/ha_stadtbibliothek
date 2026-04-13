@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from custom_components.stadtbibliothek.backends.base import AuthenticationError
+from custom_components.stadtbibliothek.backends.base import AuthenticationError, RenewalError
 from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -243,3 +243,107 @@ async def test_get_loans_strips_sort_indicators() -> None:
     # Row 2 fixture has ¬Der¬ kleine Prinz — ¬ must be stripped
     assert "¬" not in loans[1].title
     assert loans[1].title == "Der kleine Prinz"
+
+
+def _mock_login_and_ausleihen(router: respx.MockRouter) -> None:
+    """Set up mocks for login + Ausleihen page load."""
+    _mock_login_flow(router)
+    router.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
+    )
+
+
+@respx.mock
+async def test_renew_loan_success() -> None:
+    """renew_loan posts the correct checkbox and returns True on success."""
+    _mock_login_and_ausleihen(respx)
+    # After checking the checkbox and POSTing, server returns the renewed page
+    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
+    )
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        result = await backend.renew_loan("12345678")
+    finally:
+        await backend.close()
+
+    assert result is True
+
+
+@respx.mock
+async def test_renew_loan_sends_correct_checkbox() -> None:
+    """renew_loan selects the checkbox matching the item_id."""
+    _mock_login_and_ausleihen(respx)
+    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
+    )
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        await backend.renew_loan("12345678")
+    finally:
+        await backend.close()
+
+    # The renewal POST is the last POST call (after the 2 login POSTs)
+    # Find the POST that includes check_1 (item "12345678" is row index 1)
+    last_post = respx.calls[-1]
+    body = last_post.request.content.decode()
+    assert "check_1=1" in body
+    assert "textButton=Verl" in body  # URL-encoded Verlängern
+
+
+@respx.mock
+async def test_renew_loan_item_not_found() -> None:
+    """renew_loan raises RenewalError when item_id is not in the loan table."""
+    _mock_login_and_ausleihen(respx)
+
+    backend = StuttgartBackend()
+    with pytest.raises(RenewalError, match="NONEXISTENT.*not found"):
+        try:
+            await backend.login("testuser", "testpass")
+            await backend.renew_loan("NONEXISTENT")
+        finally:
+            await backend.close()
+
+
+@respx.mock
+async def test_renew_loan_server_error() -> None:
+    """renew_loan raises RenewalError with server message on failure."""
+    _mock_login_and_ausleihen(respx)
+    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renew_failed.html")),
+    )
+
+    backend = StuttgartBackend()
+    with pytest.raises(RenewalError, match="Maximale Anzahl"):
+        try:
+            await backend.login("testuser", "testpass")
+            await backend.renew_loan("87654321")
+        finally:
+            await backend.close()
+
+
+@respx.mock
+async def test_renew_all_renews_eligible_loans() -> None:
+    """renew_all renews loans within the days_remaining threshold."""
+    _mock_login_and_ausleihen(respx)
+    # Each individual renew_loan call will GET ausleihen then POST
+    respx.get(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
+    )
+    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
+    )
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        # All loans have due dates within 42 days, but only 3 are renewable
+        count = await backend.renew_all(days_remaining_threshold=42)
+    finally:
+        await backend.close()
+
+    assert count == 3  # 3 renewable items (row 4 is "nicht verlängerbar")

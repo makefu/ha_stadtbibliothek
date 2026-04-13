@@ -60,6 +60,10 @@ class AuthenticationError(Exception):
     pass
 
 
+class RenewalError(Exception):
+    pass
+
+
 class LibraryBackend(ABC):
     library_type: LibraryType
 
