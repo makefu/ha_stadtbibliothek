@@ -34,7 +34,7 @@ def _patch_backend(mock_backend_instance):
 
 
 class TestStatusHumanReadable:
-    def test_output_contains_titles_and_dates(self, _patch_backend, sample_loans, capsys, monkeypatch):
+    def test_output_contains_titles_dates_and_item_ids(self, _patch_backend, sample_loans, capsys, monkeypatch):
         monkeypatch.setattr("sys.argv", ["stadtbibliothek-stuttgart", "status", "--username", "u", "--password", "p"])
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -44,6 +44,7 @@ class TestStatusHumanReadable:
         assert "Clean Code" in out
         for loan in sample_loans:
             assert loan.due_date.isoformat() in out
+            assert loan.item_id in out
         assert "Late fee" in out
         assert "Lost item" in out
 
@@ -66,6 +67,7 @@ class TestStatusJson:
         assert "days_remaining" in data["loans"][0]
         assert "is_overdue" in data["loans"][0]
         assert "renewals_left" in data["loans"][0]
+        assert "item_id" in data["loans"][0]
         assert data["total_fees"] == 11.50
 
 

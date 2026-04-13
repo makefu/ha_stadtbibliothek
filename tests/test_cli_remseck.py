@@ -25,7 +25,9 @@ def mock_remseck_backend(sample_loans, sample_fees):
 
 @pytest.fixture
 def _patch_backend(mock_remseck_backend):
-    with patch("custom_components.stadtbibliothek.cli_remseck.RemseckBackend", return_value=mock_remseck_backend):
+    with patch(
+        "custom_components.stadtbibliothek.cli_remseck.RemseckBackend", return_value=mock_remseck_backend
+    ):
         yield mock_remseck_backend
 
 
@@ -40,6 +42,7 @@ def test_status_human_readable(_patch_backend, sample_loans, capsys, monkeypatch
     assert "Clean Code" in output
     for loan in sample_loans:
         assert loan.due_date.isoformat() in output
+        assert loan.item_id in output
     assert "Late fee" in output
     assert "Lost item" in output
 
@@ -66,6 +69,7 @@ def test_status_json_output(_patch_backend, sample_loans, sample_fees, capsys, m
         assert "is_overdue" in loan
         assert "renewals_left" in loan
         assert "due_date" in loan
+        assert "item_id" in loan
         # due_date should be an ISO string
         assert isinstance(loan["due_date"], str)
 
