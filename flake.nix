@@ -109,7 +109,40 @@
 
       checks = forAllSystems (
         pkgs:
-        nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+        let
+          # Use HA's python to get homeassistant + all its deps for type checking
+          haPython = pkgs.home-assistant.python;
+          pythonEnv = haPython.withPackages (ps: [
+            ps.homeassistant
+            ps.httpx
+            ps.beautifulsoup4
+            ps.html5lib
+            ps.lxml
+            ps.pyyaml
+            ps.voluptuous
+            ps.pytest
+            ps.pytest-asyncio
+            ps.respx
+            ps.freezegun
+          ]);
+        in
+        {
+          ruff = pkgs.runCommand "ruff-check" {
+            nativeBuildInputs = [ pkgs.ruff ];
+            RUFF_CACHE_DIR = "/tmp/ruff-cache";
+          } ''
+            cd ${self}
+            ruff check .
+            ruff format --check .
+            touch $out
+          '';
+          ty = pkgs.runCommand "ty-check" { nativeBuildInputs = [ pkgs.ty ]; } ''
+            cd ${self}
+            ty check --python ${pythonEnv}
+            touch $out
+          '';
+        }
+        // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm-test = import ./nix/vm-test.nix { inherit pkgs; };
         }
       );

@@ -63,6 +63,8 @@ class ConfigFlowResult(dict):
 class _ConfigFlowMeta(type):
     """Metaclass that accepts domain= keyword."""
 
+    DOMAIN: str | None
+
     def __new__(mcs, name, bases, namespace, domain=None, **kwargs):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         if domain is not None:
@@ -71,6 +73,7 @@ class _ConfigFlowMeta(type):
 
 
 class ConfigFlow(metaclass=_ConfigFlowMeta):
+    DOMAIN: str | None = None
     hass = MagicMock()
 
     def async_show_form(self, *, step_id, data_schema, errors=None):

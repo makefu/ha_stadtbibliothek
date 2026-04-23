@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
@@ -44,7 +45,7 @@ class LoanItem:
 class FeeItem:
     description: str
     amount: float  # EUR
-    date: date | None = None
+    date: datetime.date | None = None
 
 
 @dataclass

@@ -19,14 +19,14 @@ def _read_fixture(name: str) -> str:
     return (FIXTURES / name).read_text()
 
 
-def _mock_login_flow(router: respx.MockRouter) -> None:
+def _mock_login_flow() -> None:
     """Set up respx mocks for the full 3-step login flow."""
     # Step 1: GET start page
-    router.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
+    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
     )
     # Steps 1+2: POSTs to same jsessionid URL, return login form then logged-in page
-    router.post(SESSION_URL).mock(
+    respx.post(SESSION_URL).mock(
         side_effect=[
             httpx.Response(200, text=_read_fixture("stuttgart_login_form.html")),
             httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html")),
@@ -37,7 +37,7 @@ def _mock_login_flow(router: respx.MockRouter) -> None:
 @respx.mock
 async def test_login_step1_extracts_session() -> None:
     """Step 1 GET extracts jsessionid from form action."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
 
     backend = StuttgartBackend()
     try:
@@ -52,7 +52,7 @@ async def test_login_step1_extracts_session() -> None:
 @respx.mock
 async def test_login_step2_sends_credentials() -> None:
     """Step 2 POST includes username and password in form data."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
 
     backend = StuttgartBackend()
     try:
@@ -71,7 +71,7 @@ async def test_login_step2_sends_credentials() -> None:
 @respx.mock
 async def test_login_success() -> None:
     """Full 3-step login completes without error."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
 
     backend = StuttgartBackend()
     try:
@@ -111,7 +111,7 @@ async def test_login_failure() -> None:
 @respx.mock
 async def test_get_loans() -> None:
     """Parses loan table into LoanItem objects with correct fields."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
     respx.get(url__regex=r".*SBK00000001.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
@@ -162,7 +162,7 @@ async def test_get_loans() -> None:
 @respx.mock
 async def test_get_loans_parses_extension_info() -> None:
     """Extension column parsing: verlängerbar vs nicht verlängerbar, renewal counts."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
     respx.get(url__regex=r".*SBK00000001.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
@@ -198,7 +198,7 @@ async def test_get_loans_parses_extension_info() -> None:
 @respx.mock
 async def test_get_loans_skips_media_type_prefix() -> None:
     """Media type like [CD] or [Konventionelles Spiel] is extracted, not in title."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
     respx.get(url__regex=r".*SBK00000001.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
@@ -228,7 +228,7 @@ async def test_get_loans_skips_media_type_prefix() -> None:
 @respx.mock
 async def test_get_loans_strips_sort_indicators() -> None:
     """Non-sort indicator characters (¬) are stripped from titles."""
-    _mock_login_flow(respx)
+    _mock_login_flow()
     respx.get(url__regex=r".*SBK00000001.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
@@ -245,10 +245,10 @@ async def test_get_loans_strips_sort_indicators() -> None:
     assert loans[1].title == "Der kleine Prinz"
 
 
-def _mock_login_and_ausleihen(router: respx.MockRouter) -> None:
+def _mock_login_and_ausleihen() -> None:
     """Set up mocks for login + Ausleihen page load."""
-    _mock_login_flow(router)
-    router.get(url__regex=r".*SBK00000001.*").mock(
+    _mock_login_flow()
+    respx.get(url__regex=r".*SBK00000001.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
     )
 
@@ -256,7 +256,7 @@ def _mock_login_and_ausleihen(router: respx.MockRouter) -> None:
 @respx.mock
 async def test_renew_loan_success() -> None:
     """renew_loan posts the correct checkbox and returns True on success."""
-    _mock_login_and_ausleihen(respx)
+    _mock_login_and_ausleihen()
     # After checking the checkbox and POSTing, server returns the renewed page
     respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
@@ -275,7 +275,7 @@ async def test_renew_loan_success() -> None:
 @respx.mock
 async def test_renew_loan_sends_correct_checkbox() -> None:
     """renew_loan selects the checkbox matching the item_id."""
-    _mock_login_and_ausleihen(respx)
+    _mock_login_and_ausleihen()
     respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
     )
@@ -298,7 +298,7 @@ async def test_renew_loan_sends_correct_checkbox() -> None:
 @respx.mock
 async def test_renew_loan_item_not_found() -> None:
     """renew_loan raises RenewalError when item_id is not in the loan table."""
-    _mock_login_and_ausleihen(respx)
+    _mock_login_and_ausleihen()
 
     backend = StuttgartBackend()
     with pytest.raises(RenewalError, match="NONEXISTENT.*not found"):
@@ -312,7 +312,7 @@ async def test_renew_loan_item_not_found() -> None:
 @respx.mock
 async def test_renew_loan_server_error() -> None:
     """renew_loan raises RenewalError with server message on failure."""
-    _mock_login_and_ausleihen(respx)
+    _mock_login_and_ausleihen()
     respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_renew_failed.html")),
     )
@@ -329,7 +329,7 @@ async def test_renew_loan_server_error() -> None:
 @respx.mock
 async def test_renew_all_renews_eligible_loans() -> None:
     """renew_all renews loans within the days_remaining threshold."""
-    _mock_login_and_ausleihen(respx)
+    _mock_login_and_ausleihen()
     # Each individual renew_loan call will GET ausleihen then POST
     respx.get(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
         return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),

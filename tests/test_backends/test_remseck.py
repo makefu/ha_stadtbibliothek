@@ -2,7 +2,7 @@
 
 from datetime import date
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -277,13 +277,14 @@ async def test_renew_all_default_threshold_only_renews_due_within_14_days() -> N
         _loan("A", date(2026, 4, 20), max_renewals=3, times_renewed=0),  # 9 days left -> renew
         _loan("B", date(2026, 4, 30), max_renewals=3, times_renewed=0),  # 19 days left -> skip
     ]
-    backend.get_loans = AsyncMock(return_value=loans)
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=loans)),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all()
 
-    count = await backend.renew_all()
-
-    assert count == 1
-    backend.renew_loan.assert_awaited_once_with("A")
+        assert count == 1
+        mock_renew.assert_awaited_once_with("A")
 
 
 @freeze_time("2026-04-11")
@@ -294,13 +295,14 @@ async def test_renew_all_custom_threshold() -> None:
         _loan("A", date(2026, 4, 14), max_renewals=3, times_renewed=0),  # 3 days left -> renew
         _loan("B", date(2026, 4, 20), max_renewals=3, times_renewed=0),  # 9 days left -> skip
     ]
-    backend.get_loans = AsyncMock(return_value=loans)
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=loans)),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all(days_remaining_threshold=5)
 
-    count = await backend.renew_all(days_remaining_threshold=5)
-
-    assert count == 1
-    backend.renew_loan.assert_awaited_once_with("A")
+        assert count == 1
+        mock_renew.assert_awaited_once_with("A")
 
 
 @freeze_time("2026-04-11")
@@ -311,13 +313,14 @@ async def test_renew_all_renews_overdue_books() -> None:
         _loan("A", date(2026, 4, 1), max_renewals=3, times_renewed=0),  # -10 days -> overdue -> renew
         _loan("B", date(2026, 4, 30), max_renewals=3, times_renewed=0),  # 19 days left -> skip
     ]
-    backend.get_loans = AsyncMock(return_value=loans)
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=loans)),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all(days_remaining_threshold=5)
 
-    count = await backend.renew_all(days_remaining_threshold=5)
-
-    assert count == 1
-    backend.renew_loan.assert_awaited_once_with("A")
+        assert count == 1
+        mock_renew.assert_awaited_once_with("A")
 
 
 @freeze_time("2026-04-11")
@@ -327,13 +330,14 @@ async def test_renew_all_skips_no_renewals_left() -> None:
     loans = [
         _loan("A", date(2026, 4, 14), max_renewals=3, times_renewed=3),  # 3 days but 0 renewals left
     ]
-    backend.get_loans = AsyncMock(return_value=loans)
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=loans)),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all()
 
-    count = await backend.renew_all()
-
-    assert count == 0
-    backend.renew_loan.assert_not_awaited()
+        assert count == 0
+        mock_renew.assert_not_awaited()
 
 
 @freeze_time("2026-04-11")
@@ -348,13 +352,14 @@ async def test_renew_all_renews_unlimited_renewals() -> None:
         times_renewed=0,
         can_be_renewed=True,
     )
-    backend.get_loans = AsyncMock(return_value=[loan])
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=[loan])),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all()
 
-    count = await backend.renew_all()
-
-    assert count == 1
-    backend.renew_loan.assert_awaited_once_with("U1")
+        assert count == 1
+        mock_renew.assert_awaited_once_with("U1")
 
 
 @freeze_time("2026-04-11")
@@ -369,10 +374,11 @@ async def test_renew_all_skips_not_renewable() -> None:
         times_renewed=1,
         can_be_renewed=False,  # explicitly blocked
     )
-    backend.get_loans = AsyncMock(return_value=[loan])
-    backend.renew_loan = AsyncMock(return_value=True)
+    with (
+        patch.object(backend, "get_loans", new=AsyncMock(return_value=[loan])),
+        patch.object(backend, "renew_loan", new=AsyncMock(return_value=True)) as mock_renew,
+    ):
+        count = await backend.renew_all()
 
-    count = await backend.renew_all()
-
-    assert count == 0
-    backend.renew_loan.assert_not_awaited()
+        assert count == 0
+        mock_renew.assert_not_awaited()

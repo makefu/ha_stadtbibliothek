@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 from freezegun import freeze_time
 
@@ -10,14 +11,13 @@ from custom_components.stadtbibliothek.backends.base import (
 )
 
 
-def _make_loan(**kwargs) -> LoanItem:
-    defaults = {
-        "title": "Test Book",
-        "item_id": "123",
-        "due_date": date(2026, 5, 1),
-    }
-    defaults.update(kwargs)
-    return LoanItem(**defaults)
+def _make_loan(
+    title: str = "Test Book",
+    item_id: str = "123",
+    due_date: date | None = None,
+    **kwargs: Any,
+) -> LoanItem:
+    return LoanItem(title=title, item_id=item_id, due_date=due_date or date(2026, 5, 1), **kwargs)
 
 
 @freeze_time("2026-04-11")

@@ -203,9 +203,11 @@ class StuttgartBackend(LibraryBackend):
             if item_id in title_text:
                 checkbox = cells[0].find("input", {"type": "checkbox"})
                 if checkbox:
-                    checkbox_name = checkbox.get("name")
-                    # Browsers send "on" for checked checkboxes without a value attribute
-                    data[checkbox_name] = str(checkbox.get("value")) if checkbox.get("value") else "on"
+                    name_attr = checkbox.get("name")
+                    if isinstance(name_attr, str):
+                        checkbox_name = name_attr
+                        # Browsers send "on" for checked checkboxes without a value attribute
+                        data[checkbox_name] = str(checkbox.get("value")) if checkbox.get("value") else "on"
                 break
 
         if checkbox_name is None:
