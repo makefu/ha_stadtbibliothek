@@ -74,7 +74,7 @@ Renew a specific item by its barcode/item ID.
 | `item_id` | Barcode or item ID to renew |
 | `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
-**Response** (via `response_variable`): `{item_id, success, error}`
+**Response** (via `response_variable`): `{item_id, title, author, due_date, media_type, times_renewed, max_renewals, renewals_left, success, error}`
 
 ### `stadtbibliothek.renew_all`
 
@@ -86,7 +86,7 @@ Renew all renewable items for a library account.
 | `days_remaining_threshold` | *(optional, default 14)* Only renew items due within this many days (0-90) |
 | `config_entry_id` | *(alternative to entity_id)* The config entry of the library account |
 
-**Response** (via `response_variable`): `{renewed, total_attempted, results}` where `results` is a list of `{item_id, title, success, error}`
+**Response** (via `response_variable`): `{renewed, total_attempted, results}` where `results` is a list of `{item_id, title, author, due_date, media_type, times_renewed, max_renewals, renewals_left, success, error}`
 
 ### `stadtbibliothek.force_update`
 
@@ -186,7 +186,7 @@ action:
       title: "{{ renew_result.renewed }}/{{ renew_result.total_attempted }} verlängert"
       message: >
         {% for r in renew_result.results %}
-        {% if r.success %}✅{% else %}❌{% endif %} {{ r.title }}{% if r.error %} — {{ r.error }}{% endif %}
+        {% if r.success %}✅{% else %}❌{% endif %} {{ r.title }}{% if r.author %} ({{ r.author }}){% endif %} — fällig {{ r.due_date }}{% if r.renewals_left is not none %}, {{ r.renewals_left }} Verlängerungen übrig{% endif %}{% if r.error %} — {{ r.error }}{% endif %}
         {% endfor %}
 ```
 
@@ -217,7 +217,7 @@ action:
             title: >
               {% if result.success %}✅ Verlängert{% else %}❌ Fehlgeschlagen{% endif %}
             message: >
-              {{ repeat.item.title }}{% if result.error %} — {{ result.error }}{% endif %}
+              {{ result.title }}{% if result.author %} ({{ result.author }}){% endif %} — fällig {{ result.due_date }}{% if result.renewals_left is not none %}, {{ result.renewals_left }} Verlängerungen übrig{% endif %}{% if result.error %} — {{ result.error }}{% endif %}
 ```
 
 ### Warn about non-renewable loans due soon

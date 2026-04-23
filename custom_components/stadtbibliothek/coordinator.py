@@ -104,6 +104,12 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
                 {
                     "item_id": loan.item_id,
                     "title": loan.title,
+                    "author": loan.author,
+                    "due_date": loan.due_date.isoformat(),
+                    "media_type": loan.media_type,
+                    "times_renewed": loan.times_renewed,
+                    "max_renewals": loan.max_renewals,
+                    "renewals_left": loan.renewals_left,
                     "success": ok,
                     "error": None if ok else f"Renewal failed for {loan.item_id}",
                 }

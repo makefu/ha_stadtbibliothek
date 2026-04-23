@@ -106,16 +106,37 @@ def _register_services(hass: HomeAssistant) -> None:
         config_entry_id = _resolve_config_entry_id(hass, call.data)
         coordinator = _get_coordinator(hass, config_entry_id)
         item_id = call.data["item_id"]
+
+        # Look up loan metadata before renewal
+        loan = None
+        if coordinator.data is not None:
+            for candidate in coordinator.data.loans:
+                if candidate.item_id == item_id:
+                    loan = candidate
+                    break
+
+        meta = {
+            "title": loan.title if loan else None,
+            "author": loan.author if loan else None,
+            "due_date": loan.due_date.isoformat() if loan else None,
+            "media_type": loan.media_type if loan else None,
+            "times_renewed": loan.times_renewed if loan else None,
+            "max_renewals": loan.max_renewals if loan else None,
+            "renewals_left": loan.renewals_left if loan else None,
+        }
+
         try:
             success = await coordinator.renew_loan(item_id)
         except Exception as err:
             return {
                 "item_id": item_id,
+                **meta,
                 "success": False,
                 "error": str(err),
             }
         return {
             "item_id": item_id,
+            **meta,
             "success": success,
             "error": None if success else f"Renewal failed for {item_id}",
         }

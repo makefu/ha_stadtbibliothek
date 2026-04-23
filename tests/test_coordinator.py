@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -102,6 +102,12 @@ async def test_renew_all(mock_backend, sample_loans, sample_account):
     r = result["results"][0]
     assert r["item_id"] == "12345"
     assert r["title"] == "Python Crash Course"
+    assert r["author"] == "Eric Matthes"
+    assert r["due_date"] == date.today().isoformat()
+    assert r["media_type"] == "Book"
+    assert r["times_renewed"] == 1
+    assert r["max_renewals"] == 3
+    assert r["renewals_left"] == 2
     assert r["success"] is True
     assert r["error"] is None
 
@@ -191,6 +197,12 @@ async def test_renew_all_failed_renewal_has_error(sample_account):
     assert "Renewal failed" in r["error"]
     assert r["item_id"] == "12345"
     assert r["title"] == "Python Crash Course"
+    assert r["author"] == "Eric Matthes"
+    assert r["due_date"] == date.today().isoformat()
+    assert r["media_type"] == "Book"
+    assert r["times_renewed"] == 1
+    assert r["max_renewals"] == 3
+    assert r["renewals_left"] == 2
 
 
 async def test_renew_all_no_data_raises_update_failed():
