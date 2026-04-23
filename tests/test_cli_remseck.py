@@ -25,9 +25,7 @@ def mock_remseck_backend(sample_loans, sample_fees):
 
 @pytest.fixture
 def _patch_backend(mock_remseck_backend):
-    with patch(
-        "custom_components.stadtbibliothek.cli_remseck.RemseckBackend", return_value=mock_remseck_backend
-    ):
+    with patch("custom_components.stadtbibliothek.cli_remseck.RemseckBackend", return_value=mock_remseck_backend):
         yield mock_remseck_backend
 
 

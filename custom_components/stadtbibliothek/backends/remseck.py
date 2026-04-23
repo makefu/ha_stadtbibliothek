@@ -26,6 +26,7 @@ class RemseckBackend(LibraryBackend):
             follow_redirects=True,
             timeout=30.0,
         )
+        self._borrowernumber: str | None = None
 
     async def login(self, username: str, password: str) -> None:
         resp = await self._client.post(
@@ -50,6 +51,16 @@ class RemseckBackend(LibraryBackend):
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "lxml")
+
+        # Extract borrowernumber from the renewal form for later use
+        renew_form = soup.find("form", id="renewselected")
+        if renew_form and isinstance(renew_form, Tag):
+            bn_input = renew_form.find("input", attrs={"name": "borrowernumber"})
+            if bn_input and isinstance(bn_input, Tag):
+                val = bn_input.get("value")
+                if isinstance(val, str):
+                    self._borrowernumber = val
+
         table = soup.find("table", id="checkoutst")
         if not table or not isinstance(table, Tag):
             return []
@@ -76,11 +87,25 @@ class RemseckBackend(LibraryBackend):
         return fees
 
     async def renew_loan(self, item_id: str) -> bool:
+        if not self._borrowernumber:
+            # Need to fetch loans first to obtain borrowernumber
+            await self.get_loans()
+        if not self._borrowernumber:
+            return False
+
         resp = await self._client.post(
             f"{self.BASE_URL}/cgi-bin/koha/opac-renew.pl",
-            data={"barcode": item_id},
+            data={
+                "item": item_id,
+                "borrowernumber": self._borrowernumber,
+                "from": "opac_user",
+            },
         )
-        return resp.status_code == 200
+        if resp.status_code != 200:
+            return False
+        # The server redirects to opac-user.pl with renewed=<item> on success
+        url = str(resp.url)
+        return f"renewed={item_id}" in url
 
     async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         loans = await self.get_loans()
@@ -100,7 +125,7 @@ class RemseckBackend(LibraryBackend):
         title = title_tag.get_text(strip=True) if title_tag else ""
 
         author = _cell_text(row, "td.author")
-        item_id = _cell_text(row, "td.barcode") or _extract_biblionumber(title_tag)
+        item_id = _extract_itemnumber(row) or _extract_biblionumber(title_tag)
         media_type = _cell_text(row, "td.itype")
         call_number = _cell_text(row, "td.call_no")
         library_branch = _cell_text(row, "td.branch")
@@ -147,6 +172,29 @@ class RemseckBackend(LibraryBackend):
             amount=_parse_german_decimal(amount_str),
             date=_parse_german_date(created_str),
         )
+
+
+def _extract_itemnumber(row: Tag) -> str:
+    """Extract itemnumber from the renew checkbox or link in the renew cell.
+
+    The Koha OPAC uses itemnumber (not barcode/biblionumber) for renewal.
+    It appears as: <input type="checkbox" name="item" value="678885"/>
+    or: <a href="...opac-renew.pl?...item=678885...">
+    """
+    checkbox = row.select_one('td.renew input[name="item"]')
+    if checkbox and isinstance(checkbox, Tag):
+        val = checkbox.get("value")
+        if isinstance(val, str):
+            return val
+    # Fallback: extract from renewal link
+    link = row.select_one("td.renew a[href*='opac-renew.pl']")
+    if link and isinstance(link, Tag):
+        href = link.get("href", "")
+        if isinstance(href, str):
+            m = re.search(r"item=(\d+)", href)
+            if m:
+                return m.group(1)
+    return ""
 
 
 def _extract_biblionumber(title_tag: Tag | None) -> str:

@@ -87,7 +87,7 @@ async def test_get_loans(checkouts_html: str) -> None:
     loan = loans[0]
     assert loan.title == "Die unendliche Geschichte"
     assert loan.author == "Ende, Michael"
-    assert loan.item_id == "12345"
+    assert loan.item_id == "500001"
     assert loan.due_date == date(2026, 4, 15)
     assert loan.checkout_date is None
     assert loan.media_type == "Buch"
@@ -101,7 +101,7 @@ async def test_get_loans(checkouts_html: str) -> None:
     # Second item: Momo (overdue, no renewals left, renewals-disabled)
     overdue = loans[1]
     assert overdue.title == "Momo"
-    assert overdue.item_id == "12346"
+    assert overdue.item_id == "12346"  # no renew checkbox -> falls back to biblionumber
     assert overdue.due_date == date(2026, 3, 1)
     assert overdue.times_renewed == 3
     assert overdue.max_renewals == 3
@@ -173,6 +173,78 @@ async def test_get_fees_none(no_fees_html: str) -> None:
         await backend.close()
 
     assert fees == []
+
+
+# --- renew_loan ---
+
+
+@respx.mock
+async def test_renew_loan_extracts_borrowernumber(checkouts_html: str) -> None:
+    """get_loans extracts borrowernumber from the renewal form."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+
+    backend = RemseckBackend()
+    try:
+        await backend.get_loans()
+        assert backend._borrowernumber == "99001234"
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_renew_loan_success(checkouts_html: str) -> None:
+    """Renewal POSTs item + borrowernumber; success when redirect URL contains renewed=<item>."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    # The real server does: POST -> 302 to opac-user.pl?renewed=500001 -> 200
+    # With follow_redirects=True, resp.url is the final URL after redirect.
+    # Mock the redirect chain: POST returns 302, GET returns 200.
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-renew.pl").mock(
+        return_value=httpx.Response(
+            302,
+            headers={"location": f"{BASE_URL}/cgi-bin/koha/opac-user.pl?renewed=500001&renew_error="},
+        )
+    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl?renewed=500001&renew_error=").mock(
+        return_value=httpx.Response(200, html=checkouts_html)
+    )
+
+    backend = RemseckBackend()
+    try:
+        await backend.get_loans()
+        ok = await backend.renew_loan("500001")
+        assert ok is True
+
+        # Verify the POST was made with correct parameters
+        renew_call = respx.calls[1]  # calls[0] is get_loans GET
+        body = renew_call.request.content.decode()
+        assert "item=500001" in body
+        assert "borrowernumber=99001234" in body
+        assert "from=opac_user" in body
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_renew_loan_failure(checkouts_html: str) -> None:
+    """Renewal fails when the server redirect does not contain the item in renewed=."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    respx.post(f"{BASE_URL}/cgi-bin/koha/opac-renew.pl").mock(
+        return_value=httpx.Response(
+            302,
+            headers={"location": f"{BASE_URL}/cgi-bin/koha/opac-user.pl?renewed=&renew_error="},
+        )
+    )
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl?renewed=&renew_error=").mock(
+        return_value=httpx.Response(200, html=checkouts_html)
+    )
+
+    backend = RemseckBackend()
+    try:
+        await backend.get_loans()
+        ok = await backend.renew_loan("500001")
+        assert ok is False
+    finally:
+        await backend.close()
 
 
 # --- renew_all with days_remaining_threshold ---
