@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -40,13 +41,16 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         self._password = config_entry.data[CONF_PASSWORD]
         self.refresh_required: bool = False
 
-    def _create_backend(self) -> RemseckBackend | StuttgartBackend:
+    async def _create_backend(self) -> RemseckBackend | StuttgartBackend:
+        # httpx.AsyncClient() loads the certifi CA bundle synchronously,
+        # which blocks the event loop. Build the backend (and its client)
+        # in an executor thread instead.
         backend_cls = BACKEND_MAP[self._library_type]
-        return backend_cls()
+        return await asyncio.to_thread(backend_cls)
 
     async def _async_update_data(self) -> AccountInfo:
         self.refresh_required = False
-        backend = self._create_backend()
+        backend = await self._create_backend()
         try:
             await backend.login(self._username, self._password)
             loans = await backend.get_loans()
@@ -66,7 +70,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
 
     async def renew_loan(self, item_id: str) -> bool:
         """Renew a single loan by item ID."""
-        backend = self._create_backend()
+        backend = await self._create_backend()
         try:
             await backend.login(self._username, self._password)
             result = await backend.renew_loan(item_id)
@@ -85,7 +89,7 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
             loan for loan in self.data.loans if loan.can_be_renewed and loan.days_remaining <= days_remaining_threshold
         ]
 
-        backend = self._create_backend()
+        backend = await self._create_backend()
         try:
             await backend.login(self._username, self._password)
         except Exception as err:
