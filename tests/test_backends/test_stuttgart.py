@@ -380,3 +380,24 @@ async def test_base_url_defaults_to_the_class_constant() -> None:
         assert backend.base_url == StuttgartBackend.BASE_URL
     finally:
         await backend.close()
+
+
+async def test_close_does_not_close_an_injected_client() -> None:
+    """A caller that supplies its own client keeps ownership of it.
+
+    bib-tracker shares one rate-limited client across all accounts; closing it
+    from the first backend that finishes would break every other account.
+    """
+    client = httpx.AsyncClient()
+    try:
+        backend = StuttgartBackend(client)
+        await backend.close()
+        assert client.is_closed is False
+    finally:
+        await client.aclose()
+
+
+async def test_close_closes_a_client_it_created() -> None:
+    backend = StuttgartBackend()
+    await backend.close()
+    assert backend._client.is_closed is True

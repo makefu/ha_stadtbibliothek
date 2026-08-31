@@ -32,6 +32,7 @@ class StuttgartBackend(LibraryBackend):
             follow_redirects=True,
             timeout=30.0,
         )
+        self._owns_client = client is None
         self.base_url = (base_url or self.BASE_URL).rstrip("/")
         self._login_url: str | None = None
         self._ausleihen_url: str | None = None
@@ -250,7 +251,10 @@ class StuttgartBackend(LibraryBackend):
         return renewed
 
     async def close(self) -> None:
-        await self._client.aclose()
+        # Only close a client this backend created; an injected one
+        # belongs to the caller and may be shared with other backends.
+        if self._owns_client:
+            await self._client.aclose()
 
     @staticmethod
     def _extract_hidden_inputs(form: Tag) -> dict[str, str]:
