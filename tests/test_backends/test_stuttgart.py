@@ -123,7 +123,7 @@ async def test_get_loans() -> None:
     finally:
         await backend.close()
 
-    assert len(loans) == 4
+    assert len(loans) == 5
 
     # Row 1: CD with media type prefix
     assert loans[0].title == "Die drei Fragezeichen - Folge 220"
@@ -341,12 +341,12 @@ async def test_renew_all_renews_eligible_loans() -> None:
     backend = StuttgartBackend()
     try:
         await backend.login("testuser", "testpass")
-        # All loans have due dates within 42 days, but only 3 are renewable
+        # All loans have due dates within 42 days, but only 4 are renewable
         count = await backend.renew_all(days_remaining_threshold=42)
     finally:
         await backend.close()
 
-    assert count == 3  # 3 renewable items (row 4 is "nicht verlängerbar")
+    assert count == 4  # row 4 is "nicht verlängerbar"
 
 
 @respx.mock
@@ -440,3 +440,67 @@ async def test_stuttgart_reports_no_fee_support() -> None:
     """get_fees() returns [] because fees are not implemented, not because
     the account has none -- consumers must be able to tell the difference."""
     assert StuttgartBackend.supports_fees is False
+
+
+async def _fetch_loans() -> list:
+    _mock_login_flow()
+    respx.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
+    )
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        return await backend.get_loans()
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_book_row_splits_call_number_from_barcode() -> None:
+    """A book row is "Titel / Autor", call number, barcode."""
+    loans = await _fetch_loans()
+    book = next(loan for loan in loans if loan.title == "Der kleine Prinz")
+    assert book.author == "Saint-Exupéry, Antoine de"
+    assert book.call_number == "K-SL SAI"
+    assert book.barcode == "12345678"
+    assert book.item_id == "12345678"
+    assert book.publisher is None
+
+
+@respx.mock
+async def test_media_row_author_is_not_publisher() -> None:
+    """Regression: a media row is "[Typ]", Titel, Verlag, Signatur -- the
+    third segment is the publisher, and reporting it as the author made
+    every CD look like it was written by its label."""
+    loans = await _fetch_loans()
+    cd = next(loan for loan in loans if loan.media_type == "CD")
+    assert cd.title == "Die drei Fragezeichen - Folge 220"
+    assert cd.author is None
+    assert cd.publisher == "Europa (Musik)"
+    assert cd.call_number == "M-CD-K DRE"
+    assert cd.barcode is None
+
+
+@respx.mock
+async def test_media_row_call_number_is_not_mistaken_for_a_barcode() -> None:
+    """Media rows carry no barcode, so item_id falls back to the call number
+    -- which is what renew_loan() matches on."""
+    loans = await _fetch_loans()
+    game = next(loan for loan in loans if loan.media_type == "Konventionelles Spiel")
+    assert game.title == "Catan - Das Spiel"
+    assert game.publisher == "Kosmos"
+    assert game.call_number == "S-SPIEL CAT"
+    assert game.barcode is None
+    assert game.item_id == "S-SPIEL CAT"
+
+
+@respx.mock
+async def test_media_row_without_a_publisher() -> None:
+    """Three segments after the media type prefix: title and call number only."""
+    loans = await _fetch_loans()
+    dvd = next(loan for loan in loans if loan.media_type == "DVD")
+    assert dvd.title == "Das Leben der Anderen"
+    assert dvd.author is None
+    assert dvd.publisher is None
+    assert dvd.call_number == "M-DVD-S LEB"
+    assert dvd.item_id == "M-DVD-S LEB"

@@ -11,6 +11,8 @@ from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, Loa
 
 # Fields that indicate media type prefixes in title column
 _MEDIA_TYPE_PATTERN = re.compile(r"^\[.+\]$")
+# Exemplar barcodes are all-digit and long; call numbers never are.
+_BARCODE_PATTERN = re.compile(r"^\d{6,}$")
 
 
 class StuttgartBackend(LibraryBackend):
@@ -137,24 +139,11 @@ class StuttgartBackend(LibraryBackend):
             due_date = datetime.strptime(cells[1].text.strip(), "%d.%m.%Y").date()
             branch = cells[2].text.strip()
 
-            # Parse title column: innerHTML split on <br>
             title_parts = self._split_br(cells[3])
-            media_type = None
-            if title_parts and _MEDIA_TYPE_PATTERN.match(title_parts[0]):
-                media_type = title_parts.pop(0).strip("[]")
-
-            # After popping media_type, remaining parts are:
-            # [title, author, item_id] or [title, item_id]
-            raw_title = title_parts[0].replace("¬", "") if title_parts else ""
-            item_id = title_parts[-1] if title_parts else ""
-
-            # Author from second part (between title and item_id)
-            author = title_parts[1] if len(title_parts) > 2 else None
-
-            # Author may also be embedded in the title after " / "
-            title = raw_title
-            if " / " in raw_title:
-                title, author = raw_title.split(" / ", 1)
+            media_type, title, author, publisher, call_number, barcode = self._parse_title_cell(title_parts)
+            # Books carry a barcode, media only a call number; renew_loan()
+            # matches whichever one on the title cell text.
+            item_id = barcode or call_number or ""
 
             # Parse extension column
             ext_parts = self._split_br(cells[4])
@@ -178,6 +167,9 @@ class StuttgartBackend(LibraryBackend):
                     can_be_renewed=can_be_renewed,
                     times_renewed=times_renewed,
                     max_renewals=self.MAX_RENEWALS,
+                    call_number=call_number,
+                    barcode=barcode,
+                    publisher=publisher,
                 )
             )
 
@@ -265,6 +257,43 @@ class StuttgartBackend(LibraryBackend):
         # belongs to the caller and may be shared with other backends.
         if self._owns_client:
             await self._client.aclose()
+
+    @staticmethod
+    def _parse_title_cell(
+        parts: list[str],
+    ) -> tuple[str | None, str, str | None, str | None, str | None, str | None]:
+        """Classify the <br>-separated segments of the title cell.
+
+        aDIS uses two shapes:
+
+            book   "Titel / Autor" | Signatur | Exemplarnummer
+            media  "[Typ]" | Titel | Verlag | Signatur
+
+        Media rows carry no barcode, so the trailing segment is only an
+        exemplar number when it looks like one. Deciding by position instead
+        made every CD's call number its item_id and its label its author.
+        """
+        parts = list(parts)
+
+        media_type = None
+        if parts and _MEDIA_TYPE_PATTERN.match(parts[0]):
+            media_type = parts.pop(0).strip("[]")
+
+        barcode = None
+        if len(parts) > 1 and _BARCODE_PATTERN.match(parts[-1]):
+            barcode = parts.pop()
+
+        call_number = parts.pop() if len(parts) > 1 else None
+
+        raw_title = parts[0].replace("¬", "") if parts else ""
+        title, author = raw_title, None
+        if " / " in raw_title:
+            title, author = raw_title.split(" / ", 1)
+
+        # Whatever is left between title and call number is the publisher.
+        publisher = parts[1] if len(parts) > 1 else None
+
+        return media_type, title, author, publisher, call_number, barcode
 
     @staticmethod
     def _extract_hidden_inputs(form: Tag) -> dict[str, str]:
