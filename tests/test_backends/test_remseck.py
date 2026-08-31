@@ -382,3 +382,33 @@ async def test_renew_all_skips_not_renewable() -> None:
 
         assert count == 0
         mock_renew.assert_not_awaited()
+
+
+@respx.mock
+async def test_base_url_override_redirects_all_requests(checkouts_html: str) -> None:
+    """A custom base_url points every request at the given host.
+
+    Needed to run against a local test server (and against other LMSCloud
+    installations, which all share the same Koha layout).
+    """
+    fake = "http://fake.local"
+    login = respx.post(f"{fake}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    loans = respx.get(f"{fake}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    backend = RemseckBackend(base_url=fake)
+    try:
+        assert backend.base_url == fake
+        await backend.login("12345", "01.01.1990")
+        await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert login.called
+    assert loans.called
+
+
+async def test_base_url_defaults_to_the_class_constant() -> None:
+    backend = RemseckBackend()
+    try:
+        assert backend.base_url == RemseckBackend.BASE_URL
+    finally:
+        await backend.close()

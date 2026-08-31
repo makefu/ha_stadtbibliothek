@@ -21,18 +21,24 @@ class StuttgartBackend(LibraryBackend):
 
     _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
 
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient | None = None,
+        *,
+        base_url: str | None = None,
+    ) -> None:
         self._client = client or httpx.AsyncClient(
             headers={"User-Agent": self._USER_AGENT},
             follow_redirects=True,
             timeout=30.0,
         )
+        self.base_url = (base_url or self.BASE_URL).rstrip("/")
         self._login_url: str | None = None
         self._ausleihen_url: str | None = None
 
     async def login(self, username: str, password: str) -> None:
         # Step 1: GET start page, extract form with jsessionid
-        resp = await self._client.get(f"{self.BASE_URL}{self.START_PATH}")
+        resp = await self._client.get(f"{self.base_url}{self.START_PATH}")
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, features="html.parser")
 
@@ -41,7 +47,7 @@ class StuttgartBackend(LibraryBackend):
             raise AuthenticationError("No form found on start page")
 
         action_path = form.attrs["action"]
-        self._login_url = f"{self.BASE_URL}{action_path}"
+        self._login_url = f"{self.base_url}{action_path}"
 
         data = self._extract_hidden_inputs(form)
         data["SUO1_AUTHFU_1_hidden"] = ""
@@ -96,7 +102,7 @@ class StuttgartBackend(LibraryBackend):
 
         for link in soup.select("div#konto-services li a"):
             if "Ausleihen" in link.text:
-                self._ausleihen_url = f"{self.BASE_URL}{link.attrs['href']}"
+                self._ausleihen_url = f"{self.base_url}{link.attrs['href']}"
                 return
 
         raise AuthenticationError("Login failed: konto-services with Ausleihen link not found")
@@ -183,7 +189,7 @@ class StuttgartBackend(LibraryBackend):
         if not isinstance(form, Tag):
             raise RuntimeError("No form found on Ausleihen page")
 
-        action_url = f"{self.BASE_URL}{form.attrs['action']}"
+        action_url = f"{self.base_url}{form.attrs['action']}"
         data = self._extract_hidden_inputs(form)
 
         # Remove all submit button values — only the clicked button should be sent

@@ -21,16 +21,22 @@ class RemseckBackend(LibraryBackend):
     library_type = LibraryType.REMSECK
     BASE_URL = "https://mt-remseck.lmscloud.net"
 
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        client: httpx.AsyncClient | None = None,
+        *,
+        base_url: str | None = None,
+    ) -> None:
         self._client = client or httpx.AsyncClient(
             follow_redirects=True,
             timeout=30.0,
         )
+        self.base_url = (base_url or self.BASE_URL).rstrip("/")
         self._borrowernumber: str | None = None
 
     async def login(self, username: str, password: str) -> None:
         resp = await self._client.post(
-            f"{self.BASE_URL}/cgi-bin/koha/opac-user.pl",
+            f"{self.base_url}/cgi-bin/koha/opac-user.pl",
             data={
                 "userid": username,
                 "password": password,
@@ -46,7 +52,7 @@ class RemseckBackend(LibraryBackend):
 
     async def get_loans(self) -> list[LoanItem]:
         resp = await self._client.get(
-            f"{self.BASE_URL}/cgi-bin/koha/opac-user.pl",
+            f"{self.base_url}/cgi-bin/koha/opac-user.pl",
         )
         resp.raise_for_status()
 
@@ -72,7 +78,7 @@ class RemseckBackend(LibraryBackend):
 
     async def get_fees(self) -> list[FeeItem]:
         resp = await self._client.get(
-            f"{self.BASE_URL}/cgi-bin/koha/opac-account.pl",
+            f"{self.base_url}/cgi-bin/koha/opac-account.pl",
         )
         resp.raise_for_status()
 
@@ -94,7 +100,7 @@ class RemseckBackend(LibraryBackend):
             return False
 
         resp = await self._client.post(
-            f"{self.BASE_URL}/cgi-bin/koha/opac-renew.pl",
+            f"{self.base_url}/cgi-bin/koha/opac-renew.pl",
             data={
                 "item": item_id,
                 "borrowernumber": self._borrowernumber,

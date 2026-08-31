@@ -347,3 +347,36 @@ async def test_renew_all_renews_eligible_loans() -> None:
         await backend.close()
 
     assert count == 3  # 3 renewable items (row 4 is "nicht verlängerbar")
+
+
+@respx.mock
+async def test_base_url_override_redirects_all_requests() -> None:
+    """A custom base_url points every request at the given host."""
+    fake = "http://fake.local"
+    start = respx.get(f"{fake}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+    )
+    respx.post(f"{fake}/aDISWeb/app;jsessionid=TESTsession123ABC").mock(
+        side_effect=[
+            httpx.Response(200, text=_read_fixture("stuttgart_login_form.html")),
+            httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html")),
+        ],
+    )
+    backend = StuttgartBackend(base_url=fake)
+    try:
+        assert backend.base_url == fake
+        await backend.login("testuser", "testpass")
+    finally:
+        await backend.close()
+
+    assert start.called
+    assert backend._ausleihen_url is not None
+    assert backend._ausleihen_url.startswith(fake)
+
+
+async def test_base_url_defaults_to_the_class_constant() -> None:
+    backend = StuttgartBackend()
+    try:
+        assert backend.base_url == StuttgartBackend.BASE_URL
+    finally:
+        await backend.close()

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
+from typing import ClassVar
 
 
 class LibraryType(str, Enum):
@@ -67,6 +68,12 @@ class RenewalError(Exception):
 
 class LibraryBackend(ABC):
     library_type: LibraryType
+
+    #: Default host of the OPAC. Overridable per instance via ``base_url`` so a
+    #: backend can be pointed at a test server or another installation of the
+    #: same OPAC software.
+    BASE_URL: ClassVar[str]
+    base_url: str
 
     @abstractmethod
     async def login(self, username: str, password: str) -> None:
