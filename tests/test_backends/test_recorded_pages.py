@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from bs4 import BeautifulSoup, Tag
 from freezegun import freeze_time
 
 from custom_components.stadtbibliothek.backends.base import ParseError
@@ -165,6 +166,24 @@ async def test_remaining_renewals_are_read_as_renewals_already_used(checkouts: s
     exhausted = [loan for loan in loans if loan.renewals_left == 0]
     assert exhausted, "expected at least one loan with its renewals used up"
     assert all(loan.times_renewed == 3 for loan in exhausted)
+
+
+async def test_a_subtitle_is_separated_from_the_title(checkouts: str) -> None:
+    """Koha puts title and subtitle in sibling spans with nothing between
+    them, so the link's plain text runs the two together: this account had
+    "So geht Technik!" and "Warum Toaster toasten" arriving as one word, and
+    fifteen of twenty-seven titles were mangled the same way. A metadata
+    lookup on a title like that matches nothing."""
+    assert 'class="subtitle"' in checkouts
+    loans = await _remseck_loans(checkouts)
+    titles = {loan.title for loan in loans}
+
+    assert "So geht Technik! : Warum Toaster toasten, Flugzeuge fliegen und Wasser aus dem Hahn kommt" in titles
+    assert "tiptoi Puzzle für kleine Entdecker: Zoo : Kinderpuzzle ab 3 Jahren, für 1 Spieler" in titles
+    assert not any("!Warum" in title or "ZooKinder" in title for title in titles)
+
+    with_subtitle = [title for title in titles if " : " in title]
+    assert len(with_subtitle) == checkouts.count('class="subtitle"')
 
 
 async def test_covers_are_taken_from_the_jacket_cell_and_absent_when_there_is_none(checkouts: str) -> None:
@@ -341,24 +360,26 @@ async def test_the_row_checkboxes_are_named_the_way_renewal_posts_them(ausleihen
     assert 'name="cellCheck$1"' in ausleihen
 
 
+def _first_form(name: str) -> Tag:
+    """The form login() reads its next request out of, on a recorded page."""
+    soup = BeautifulSoup(_recorded(name), features="html.parser")
+    form = soup.find("form")
+    assert isinstance(form, Tag), f"no form on {name}"
+    return form
+
+
 async def test_the_account_overview_links_the_loan_listing() -> None:
     """login() finds its way to the loans through div#konto-services; without
     that link there is nothing to fetch."""
-    from bs4 import BeautifulSoup
-
     soup = BeautifulSoup(_recorded("stuttgart_account.html"), features="html.parser")
     links = [link for link in soup.select("div#konto-services li a") if "Ausleihen" in link.text]
     assert links, "no Ausleihen link on the recorded account page"
-    assert links[0].attrs["href"].startswith("/aDISWeb/app")
+    assert str(links[0].attrs["href"]).startswith("/aDISWeb/app")
 
 
 async def test_the_start_page_carries_the_form_login_begins_with() -> None:
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(_recorded("stuttgart_home.html"), features="html.parser")
-    form = soup.find("form")
-    assert form is not None
-    assert form.attrs["action"].startswith("/aDISWeb/app")
+    form = _first_form("stuttgart_home.html")
+    assert str(form.attrs["action"]).startswith("/aDISWeb/app")
     names = {inp.get("name") for inp in form.find_all("input")}
     assert {"service", "sp", "Form0", "requestCount", "scriptEnabled"} <= names
 
@@ -366,12 +387,8 @@ async def test_the_start_page_carries_the_form_login_begins_with() -> None:
 async def test_the_credentials_form_takes_the_fields_login_fills_in() -> None:
     """Step 2 of the aDIS flow. The field names are positional nonsense
     ($Textfield, $Textfield$0) and only a recording can vouch for them."""
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(_recorded("stuttgart_login_form.html"), features="html.parser")
-    form = soup.find("form")
-    assert form is not None
-    assert form.attrs["action"].startswith("/aDISWeb/app")
+    form = _first_form("stuttgart_login_form.html")
+    assert str(form.attrs["action"]).startswith("/aDISWeb/app")
 
 
 # --- the recordings themselves ------------------------------------------

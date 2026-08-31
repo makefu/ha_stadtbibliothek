@@ -179,7 +179,7 @@ class RemseckBackend(LibraryBackend):
 
     def _parse_loan_row(self, row: Tag) -> LoanItem:
         title_tag = row.select_one("td.title a.title")
-        title = title_tag.get_text(strip=True) if title_tag else ""
+        title = _title_text(title_tag)
 
         author = _cell_text(row, "td.author")
         item_id = _extract_itemnumber(row) or _extract_biblionumber(title_tag)
@@ -271,6 +271,27 @@ def _extract_biblionumber(title_tag: Tag | None) -> str:
         if m:
             return m.group(1)
     return ""
+
+
+def _title_text(title_tag: Tag | None) -> str:
+    """Read the title out of the loan row's catalogue link.
+
+    Koha puts the title and its subtitle in sibling spans with no separator
+    between them, so taking the link's text whole runs the two together:
+    "So geht Technik!" and "Warum Toaster toasten" arrive as one word. Join
+    them the way Koha's own detail page does, and fall back to the plain text
+    for installations that render no spans at all.
+    """
+    if title_tag is None:
+        return ""
+    parts = [
+        span.get_text(strip=True)
+        for span in title_tag.select("span.biblio-title, span.subtitle, span.part_name, span.part_number")
+    ]
+    parts = [part for part in parts if part]
+    if parts:
+        return " : ".join(parts)
+    return title_tag.get_text(strip=True)
 
 
 def _attr(tag: Tag | None, name: str) -> str | None:
