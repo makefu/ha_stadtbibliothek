@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
 
@@ -10,17 +9,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .backends.base import AccountInfo, AuthenticationError, LibraryType
-from .backends.remseck import RemseckBackend
-from .backends.stuttgart import StuttgartBackend
+from .backends import create_backend
+from .backends.base import AccountInfo, AuthenticationError, LibraryBackend, LibraryType
 from .const import CONF_LIBRARY_TYPE, CONF_PASSWORD, CONF_USERNAME, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-BACKEND_MAP = {
-    LibraryType.REMSECK.value: RemseckBackend,
-    LibraryType.STUTTGART.value: StuttgartBackend,
-}
 
 
 class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
@@ -41,12 +34,8 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         self._password = config_entry.data[CONF_PASSWORD]
         self.refresh_required: bool = False
 
-    async def _create_backend(self) -> RemseckBackend | StuttgartBackend:
-        # httpx.AsyncClient() loads the certifi CA bundle synchronously,
-        # which blocks the event loop. Build the backend (and its client)
-        # in an executor thread instead.
-        backend_cls = BACKEND_MAP[self._library_type]
-        return await asyncio.to_thread(backend_cls)
+    async def _create_backend(self) -> LibraryBackend:
+        return await create_backend(self._library_type)
 
     async def _async_update_data(self) -> AccountInfo:
         self.refresh_required = False

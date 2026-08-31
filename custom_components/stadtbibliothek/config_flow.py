@@ -9,9 +9,8 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
+from .backends import create_backend
 from .backends.base import AuthenticationError, LibraryType
-from .backends.remseck import RemseckBackend
-from .backends.stuttgart import StuttgartBackend
 from .const import CONF_LIBRARY_TYPE, CONF_PASSWORD, CONF_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,11 +28,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-BACKEND_MAP = {
-    LibraryType.REMSECK.value: RemseckBackend,
-    LibraryType.STUTTGART.value: StuttgartBackend,
-}
-
 
 class StadtbibliothekConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Stadtbibliothek."""
@@ -48,8 +42,7 @@ class StadtbibliothekConfigFlow(ConfigFlow, domain=DOMAIN):
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
 
-            backend_cls = BACKEND_MAP[library_type]
-            backend = backend_cls()
+            backend = await create_backend(library_type)
 
             try:
                 await backend.login(username, password)

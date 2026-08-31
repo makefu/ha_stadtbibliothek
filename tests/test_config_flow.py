@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -19,15 +19,14 @@ def _user_input(library_type="remseck", username="testuser", password="testpass"
     }
 
 
-def _mock_backend_cls(login_side_effect=None):
-    """Return a mock backend class whose instances have a mock login()."""
-    mock_instance = AsyncMock()
+def _mock_create_backend(login_side_effect=None):
+    """Return a create_backend replacement plus the backend it hands out."""
+    backend = AsyncMock()
     if login_side_effect:
-        mock_instance.login = AsyncMock(side_effect=login_side_effect)
+        backend.login = AsyncMock(side_effect=login_side_effect)
     else:
-        mock_instance.login = AsyncMock()
-    cls = MagicMock(return_value=mock_instance)
-    return cls, mock_instance
+        backend.login = AsyncMock()
+    return AsyncMock(return_value=backend), backend
 
 
 @pytest.fixture
@@ -42,8 +41,8 @@ async def test_show_form_on_first_step(flow):
 
 
 async def test_successful_login_remseck(flow):
-    cls, inst = _mock_backend_cls()
-    with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
+    factory, inst = _mock_create_backend()
+    with patch("custom_components.stadtbibliothek.config_flow.create_backend", factory):
         result = await flow.async_step_user(_user_input())
     assert result["type"] == "create_entry"
     assert result["title"] == "Remseck (Koha) - testuser"
@@ -52,24 +51,24 @@ async def test_successful_login_remseck(flow):
 
 
 async def test_successful_login_stuttgart(flow):
-    cls, inst = _mock_backend_cls()
-    with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"stuttgart": cls}):
+    factory, inst = _mock_create_backend()
+    with patch("custom_components.stadtbibliothek.config_flow.create_backend", factory):
         result = await flow.async_step_user(_user_input(library_type="stuttgart"))
     assert result["type"] == "create_entry"
     assert result["title"] == "Stuttgart (aDIS) - testuser"
 
 
 async def test_invalid_auth_shows_error(flow):
-    cls, _ = _mock_backend_cls(login_side_effect=AuthenticationError("bad creds"))
-    with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
+    factory, _ = _mock_create_backend(login_side_effect=AuthenticationError("bad creds"))
+    with patch("custom_components.stadtbibliothek.config_flow.create_backend", factory):
         result = await flow.async_step_user(_user_input())
     assert result["type"] == "form"
     assert result["errors"]["base"] == "invalid_auth"
 
 
 async def test_connection_error_shows_error(flow):
-    cls, _ = _mock_backend_cls(login_side_effect=ConnectionError("timeout"))
-    with patch.dict("custom_components.stadtbibliothek.config_flow.BACKEND_MAP", {"remseck": cls}):
+    factory, _ = _mock_create_backend(login_side_effect=ConnectionError("timeout"))
+    with patch("custom_components.stadtbibliothek.config_flow.create_backend", factory):
         result = await flow.async_step_user(_user_input())
     assert result["type"] == "form"
     assert result["errors"]["base"] == "cannot_connect"
