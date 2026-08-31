@@ -481,3 +481,120 @@ async def test_get_fees_on_an_empty_account_returns_empty(no_fees_html: str) -> 
 
 async def test_remseck_reports_fee_support() -> None:
     assert RemseckBackend.supports_fees is True
+
+
+@pytest.fixture
+def detail_html() -> str:
+    return _read_fixture("remseck_detail.html")
+
+
+@pytest.fixture
+def detail_no_isbn_html() -> str:
+    return _read_fixture("remseck_detail_no_isbn.html")
+
+
+@respx.mock
+async def test_get_loans_extracts_detail_url(checkouts_html: str) -> None:
+    """Every checkout row links its catalogue record; absolutise it so the
+    URL stays usable outside the OPAC."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert loans[0].detail_url == f"{BASE_URL}/cgi-bin/koha/opac-detail.pl?biblionumber=12345"
+
+
+@respx.mock
+async def test_get_loans_extracts_cover_url(checkouts_html: str) -> None:
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert loans[1].cover_url == "https://cover.ekz.de/004251192118868.jpg"
+
+
+@respx.mock
+async def test_get_loans_ignores_the_no_image_placeholder(checkouts_html: str) -> None:
+    """Koha renders a placeholder graphic when it has no jacket; reporting it
+    as a cover would give every unknown title the same broken image."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert loans[0].cover_url is None
+
+
+@respx.mock
+async def test_fetch_details_fills_isbn_and_cover(checkouts_html: str, detail_html: str) -> None:
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    detail = respx.get(f"{BASE_URL}/cgi-bin/koha/opac-detail.pl", params={"biblionumber": "12345"}).mock(
+        return_value=httpx.Response(200, html=detail_html)
+    )
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+        enriched = await backend.fetch_details(loans[0])
+    finally:
+        await backend.close()
+
+    assert detail.called
+    assert enriched.isbn == "9783522621885"
+    assert enriched.cover_url == "https://static.onleihe.de/images/bonnier/20220429/9783522621885/tn9783522621885l.jpg"
+
+
+@respx.mock
+async def test_fetch_details_does_not_mistake_a_product_ean_for_an_isbn(
+    checkouts_html: str, detail_no_isbn_html: str
+) -> None:
+    """Non-book media carry a GTIN in the EAN field. Only 978/979 prefixes are
+    ISBN-13s; anything else must not be reported as one."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-detail.pl", params={"biblionumber": "12345"}).mock(
+        return_value=httpx.Response(200, html=detail_no_isbn_html)
+    )
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+        enriched = await backend.fetch_details(loans[0])
+    finally:
+        await backend.close()
+
+    assert enriched.isbn is None
+    assert enriched.cover_url == "https://cover.ekz.de/004251192118868.jpg"
+
+
+async def test_fetch_details_without_a_detail_url_is_a_no_op() -> None:
+    loan = LoanItem(title="Test", item_id="1", due_date=date.today())
+    backend = RemseckBackend()
+    try:
+        assert await backend.fetch_details(loan) is loan
+    finally:
+        await backend.close()
+
+
+async def test_remseck_supports_details() -> None:
+    assert RemseckBackend.supports_details is True
+
+
+async def test_stuttgart_fetch_details_is_a_no_op() -> None:
+    """aDIS detail pages need a separate session-bound flow; the default
+    implementation must leave the loan untouched rather than pretend."""
+    from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
+
+    loan = LoanItem(title="Test", item_id="1", due_date=date.today(), detail_url="https://example.invalid/x")
+    backend = StuttgartBackend()
+    try:
+        assert await backend.fetch_details(loan) is loan
+    finally:
+        await backend.close()
+
+    assert StuttgartBackend.supports_details is False

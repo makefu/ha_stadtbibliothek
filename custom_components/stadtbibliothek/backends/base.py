@@ -97,6 +97,10 @@ class LibraryBackend(ABC):
     #: not the same as the account having none.
     supports_fees: ClassVar[bool] = True
 
+    #: Whether fetch_details() actually retrieves anything. It costs one extra
+    #: request per item, so callers that poll frequently should skip it.
+    supports_details: ClassVar[bool] = False
+
     @abstractmethod
     async def login(self, username: str, password: str) -> None:
         """Authenticate. Raises AuthenticationError on failure."""
@@ -116,6 +120,15 @@ class LibraryBackend(ABC):
     @abstractmethod
     async def renew_all(self, days_remaining_threshold: int = 14) -> int:
         """Renew all renewable loans. Returns count renewed."""
+
+    async def fetch_details(self, loan: LoanItem) -> LoanItem:
+        """Enrich a loan with data that needs an extra request.
+
+        Deliberately not part of get_loans(): it costs one request per item,
+        which a frequent poller does not want to pay. Returns the loan
+        unchanged when the backend has nothing more to offer.
+        """
+        return loan
 
     async def close(self) -> None:
         pass

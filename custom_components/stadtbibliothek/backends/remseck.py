@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup, Tag
@@ -16,6 +17,10 @@ from .base import (
 )
 
 
+# ISBN-13s are the only EANs in the Bookland prefixes.
+_ISBN13_PATTERN = re.compile(r"^97[89]\d{10}$")
+
+
 class RemseckBackend(LibraryBackend):
     """Backend for Mediathek Remseck (Koha/LMSCloud OPAC)."""
 
@@ -24,6 +29,9 @@ class RemseckBackend(LibraryBackend):
     #: Present on every logged-in OPAC page; its absence means the session
     #: is gone or the page layout changed.
     ACCOUNT_MARKER = "#useraccount"
+    #: Koha renders this graphic when it has no jacket for a record.
+    NO_COVER_MARKER = "no-image"
+    supports_details = True
 
     def __init__(
         self,
@@ -80,10 +88,7 @@ class RemseckBackend(LibraryBackend):
             # Account page without a checkout table: nothing is borrowed.
             return []
 
-        loans: list[LoanItem] = []
-        for row in table.select("tbody tr"):
-            loans.append(self._parse_loan_row(row))
-        return loans
+        return [self._parse_loan_row(row) for row in table.select("tbody tr")]
 
     async def get_fees(self) -> list[FeeItem]:
         resp = await self._client.get(
@@ -135,14 +140,43 @@ class RemseckBackend(LibraryBackend):
                     renewed += 1
         return renewed
 
+    async def fetch_details(self, loan: LoanItem) -> LoanItem:
+        """Fill in ISBN and a better cover from the catalogue detail page."""
+        if not loan.detail_url:
+            return loan
+
+        resp = await self._client.get(loan.detail_url)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+
+        isbn = _first_text(soup, 'span[property="isbn"]')
+        if isbn is None:
+            # Non-book media carry a product GTIN here, not a book number.
+            ean = _first_text(soup, 'span[property="ean"]')
+            if ean and _ISBN13_PATTERN.match(ean):
+                isbn = ean
+        if isbn:
+            loan.isbn = isbn
+
+        cover = self._absolute(_attr(soup.select_one("div.bookcover div.cover-image img"), "src"))
+        if cover and self.NO_COVER_MARKER not in cover:
+            loan.cover_url = cover
+
+        return loan
+
+    def _absolute(self, url: str | None) -> str | None:
+        """Resolve an OPAC-relative URL against the configured base URL."""
+        if not url:
+            return None
+        return urljoin(f"{self.base_url}/", url)
+
     async def close(self) -> None:
         # Only close a client this backend created; an injected one
         # belongs to the caller and may be shared with other backends.
         if self._owns_client:
             await self._client.aclose()
 
-    @staticmethod
-    def _parse_loan_row(row: Tag) -> LoanItem:
+    def _parse_loan_row(self, row: Tag) -> LoanItem:
         title_tag = row.select_one("td.title a.title")
         title = title_tag.get_text(strip=True) if title_tag else ""
 
@@ -154,6 +188,11 @@ class RemseckBackend(LibraryBackend):
 
         due_date = _parse_data_order_date(row, "td.date_due")
         checkout_date = _parse_data_order_date(row, "td.checkout_date")
+
+        detail_url = self._absolute(_attr(title_tag, "href"))
+        cover_url = self._absolute(_attr(row.select_one("td.jacketcell img"), "src"))
+        if cover_url and self.NO_COVER_MARKER in cover_url:
+            cover_url = None
 
         times_renewed, max_renewals = _parse_renewals(row)
         no_renewal_before = _parse_no_renewal_before(row)
@@ -177,6 +216,8 @@ class RemseckBackend(LibraryBackend):
             can_be_renewed=can_be_renewed,
             times_renewed=times_renewed,
             max_renewals=max_renewals,
+            cover_url=cover_url,
+            detail_url=detail_url,
         )
 
     @staticmethod
@@ -229,6 +270,21 @@ def _extract_biblionumber(title_tag: Tag | None) -> str:
         if m:
             return m.group(1)
     return ""
+
+
+def _attr(tag: Tag | None, name: str) -> str | None:
+    if tag is None:
+        return None
+    value = tag.get(name)
+    return value if isinstance(value, str) else None
+
+
+def _first_text(soup: BeautifulSoup, selector: str) -> str | None:
+    tag = soup.select_one(selector)
+    if tag is None:
+        return None
+    text = tag.get_text(strip=True)
+    return text or None
 
 
 def _cell_text(row: Tag, selector: str) -> str:
