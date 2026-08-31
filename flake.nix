@@ -4,12 +4,22 @@
   outputs =
     { nixpkgs, self, ... }:
     let
-      forAllSystems =
-        f:
-        nixpkgs.lib.genAttrs [
-          "x86_64-linux"
-          "aarch64-linux"
-        ] (system: f nixpkgs.legacyPackages.${system});
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+
+      # Every output is built against nixpkgs with our own overlay applied, so
+      # `packages.default` and a consumer's `python3.withPackages` are the same
+      # derivation rather than two recipes for one library.
+      pkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ self.overlays.default ];
+        };
+
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f (pkgsFor system));
 
       version =
         (builtins.fromJSON (builtins.readFile ./custom_components/stadtbibliothek/manifest.json)).version;
@@ -56,35 +66,33 @@
         }
       );
 
+      overlays.default = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyfinal: _pyprev: {
+            ha-stadtbibliothek = pyfinal.callPackage ./nix/package.nix { };
+          })
+        ];
+      };
+
       packages = forAllSystems (pkgs: {
-        default = pkgs.python313Packages.buildPythonApplication {
-          pname = "ha-stadtbibliothek";
-          inherit version;
-          src = ./.;
-          format = "pyproject";
+        # The Python module, for consumers that want to import the backends.
+        python-module = pkgs.python313Packages.ha-stadtbibliothek;
 
-          build-system = [ pkgs.python313Packages.setuptools ];
-
-          propagatedBuildInputs = with pkgs.python313Packages; [
-            httpx
-            beautifulsoup4
-            html5lib
-            lxml
-          ];
-
-          doInstallCheck = true;
-          installCheckPhase = ''
-            $out/bin/stadtbibliothek-remseck --version | grep -q "${version}"
-            $out/bin/stadtbibliothek-stuttgart --version | grep -q "${version}"
-          '';
-
-          meta.mainProgram = "stadtbibliothek-remseck";
-
-          passthru = {
-            isHomeAssistantComponent = true;
-            domain = "stadtbibliothek";
-          };
-        };
+        # The CLI tools, wrapping the very same build.
+        default =
+          (pkgs.python313Packages.toPythonApplication pkgs.python313Packages.ha-stadtbibliothek).overrideAttrs
+            (old: {
+              doInstallCheck = true;
+              installCheckPhase = ''
+                $out/bin/stadtbibliothek-remseck --version | grep -q "${version}"
+                $out/bin/stadtbibliothek-stuttgart --version | grep -q "${version}"
+              '';
+              # home-assistant.customComponents reads this to find the component.
+              passthru = old.passthru or { } // {
+                isHomeAssistantComponent = true;
+                domain = "stadtbibliothek";
+              };
+            });
       });
 
       devShells = forAllSystems (pkgs: {
@@ -127,20 +135,35 @@
           ]);
         in
         {
-          ruff = pkgs.runCommand "ruff-check" {
-            nativeBuildInputs = [ pkgs.ruff ];
-            RUFF_CACHE_DIR = "/tmp/ruff-cache";
-          } ''
-            cd ${self}
-            ruff check .
-            ruff format --check .
-            touch $out
-          '';
+          ruff =
+            pkgs.runCommand "ruff-check"
+              {
+                nativeBuildInputs = [ pkgs.ruff ];
+                RUFF_CACHE_DIR = "/tmp/ruff-cache";
+              }
+              ''
+                cd ${self}
+                ruff check .
+                ruff format --check .
+                touch $out
+              '';
           ty = pkgs.runCommand "ty-check" { nativeBuildInputs = [ pkgs.ty ]; } ''
             cd ${self}
             ty check --python ${pythonEnv}
             touch $out
           '';
+          # Proves the overlay actually yields an importable module, so
+          # downstream flakes find out here rather than in their own build.
+          python-import =
+            pkgs.runCommand "python-import-check"
+              {
+                nativeBuildInputs = [ (pkgs.python313.withPackages (ps: [ ps.ha-stadtbibliothek ])) ];
+              }
+              ''
+                python -c 'from custom_components.stadtbibliothek.backends import BACKENDS, create_backend
+                assert set(BACKENDS) == {"remseck", "stuttgart"}'
+                touch $out
+              '';
         }
         // nixpkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm-test = import ./nix/vm-test.nix { inherit pkgs; };

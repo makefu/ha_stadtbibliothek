@@ -39,12 +39,7 @@ class RemseckBackend(LibraryBackend):
         *,
         base_url: str | None = None,
     ) -> None:
-        self._client = client or httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=30.0,
-        )
-        self._owns_client = client is None
-        self.base_url = (base_url or self.BASE_URL).rstrip("/")
+        super().__init__(client, base_url=base_url)
         self._borrowernumber: str | None = None
 
     async def login(self, username: str, password: str) -> None:
@@ -169,12 +164,6 @@ class RemseckBackend(LibraryBackend):
         if not url:
             return None
         return urljoin(f"{self.base_url}/", url)
-
-    async def close(self) -> None:
-        # Only close a client this backend created; an injected one
-        # belongs to the caller and may be shared with other backends.
-        if self._owns_client:
-            await self._client.aclose()
 
     def _parse_loan_row(self, row: Tag) -> LoanItem:
         title_tag = row.select_one("td.title a.title")

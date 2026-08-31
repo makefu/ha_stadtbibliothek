@@ -25,7 +25,7 @@ class StuttgartBackend(LibraryBackend):
     #: us somewhere else entirely, typically back to the search mask.
     RESULTS_MARKER = "section#results"
 
-    _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
+    CLIENT_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"}
 
     def __init__(
         self,
@@ -33,13 +33,7 @@ class StuttgartBackend(LibraryBackend):
         *,
         base_url: str | None = None,
     ) -> None:
-        self._client = client or httpx.AsyncClient(
-            headers={"User-Agent": self._USER_AGENT},
-            follow_redirects=True,
-            timeout=30.0,
-        )
-        self._owns_client = client is None
-        self.base_url = (base_url or self.BASE_URL).rstrip("/")
+        super().__init__(client, base_url=base_url)
         self._login_url: str | None = None
         self._ausleihen_url: str | None = None
 
@@ -251,12 +245,6 @@ class StuttgartBackend(LibraryBackend):
                 except RenewalError:
                     pass
         return renewed
-
-    async def close(self) -> None:
-        # Only close a client this backend created; an injected one
-        # belongs to the caller and may be shared with other backends.
-        if self._owns_client:
-            await self._client.aclose()
 
     @staticmethod
     def _parse_title_cell(

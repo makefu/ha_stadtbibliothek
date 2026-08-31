@@ -5,7 +5,6 @@ import os
 import sys
 from pathlib import Path
 
-import httpx
 import yaml
 
 # Add project root to path so we can import the backend
@@ -69,11 +68,10 @@ async def main() -> None:
     username, password = load_credentials()
     print(f"\nCredentials loaded: username={username}")
 
-    client = httpx.AsyncClient(
-        headers={"User-Agent": StuttgartBackend._USER_AGENT},
-        follow_redirects=True,
-    )
-    backend = StuttgartBackend(client=client)
+    # The backend builds a client with the right headers itself; keep a
+    # reference so the debug dump below can reuse the same session.
+    backend = StuttgartBackend()
+    client = backend._client
 
     # --- Login ---
     print("\n--- LOGIN ---")
@@ -84,7 +82,7 @@ async def main() -> None:
         # Try to dump some debug info
         print("\nAttempting debug: fetching start page HTML snippet...")
         try:
-            resp = await client.get(f"{backend.BASE_URL}{backend.START_PATH}")
+            resp = await client.get(f"{backend.base_url}{backend.START_PATH}")
             print(resp.text[:2000])
         except Exception as e2:
             print(f"  Could not fetch debug page: {e2}")

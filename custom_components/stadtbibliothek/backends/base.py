@@ -7,6 +7,8 @@ from datetime import date
 from enum import Enum
 from typing import ClassVar
 
+import httpx
+
 
 class LibraryType(str, Enum):
     REMSECK = "remseck"
@@ -101,6 +103,27 @@ class LibraryBackend(ABC):
     #: request per item, so callers that poll frequently should skip it.
     supports_details: ClassVar[bool] = False
 
+    #: Extra headers for a client the backend opens itself. Some OPACs reject
+    #: requests that do not look like a browser.
+    CLIENT_HEADERS: ClassVar[dict[str, str]] = {}
+    REQUEST_TIMEOUT: ClassVar[float] = 30.0
+
+    def __init__(
+        self,
+        client: httpx.AsyncClient | None = None,
+        *,
+        base_url: str | None = None,
+    ) -> None:
+        # A client we were handed belongs to the caller and may be shared with
+        # other backends, so close() must leave it alone.
+        self._owns_client = client is None
+        self._client = client or httpx.AsyncClient(
+            headers=self.CLIENT_HEADERS or None,
+            follow_redirects=True,
+            timeout=self.REQUEST_TIMEOUT,
+        )
+        self.base_url = (base_url or self.BASE_URL).rstrip("/")
+
     @abstractmethod
     async def login(self, username: str, password: str) -> None:
         """Authenticate. Raises AuthenticationError on failure."""
@@ -131,4 +154,5 @@ class LibraryBackend(ABC):
         return loan
 
     async def close(self) -> None:
-        pass
+        if self._owns_client:
+            await self._client.aclose()
