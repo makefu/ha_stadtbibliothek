@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .backends import create_backend
-from .backends.base import AccountInfo, AuthenticationError, LibraryBackend, LibraryType
+from .backends.base import AccountInfo, AuthenticationError, LibraryBackend, LibraryType, ParseError
 from .const import CONF_LIBRARY_TYPE, CONF_PASSWORD, CONF_USERNAME, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +54,10 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
             )
         except AuthenticationError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
+        except ParseError as err:
+            # Going unavailable is correct here: reporting zero loans would
+            # look like everything had been returned.
+            raise UpdateFailed(f"Unexpected page layout: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error fetching data: {err}") from err
 

@@ -66,6 +66,15 @@ class RenewalError(Exception):
     pass
 
 
+class ParseError(Exception):
+    """The fetched page is not the account page we expected.
+
+    Distinguishes "the OPAC changed, or the session expired" from "the account
+    genuinely has nothing on it". Consumers that record history must never
+    treat the former as an empty account.
+    """
+
+
 class LibraryBackend(ABC):
     library_type: LibraryType
 
@@ -74,6 +83,11 @@ class LibraryBackend(ABC):
     #: same OPAC software.
     BASE_URL: ClassVar[str]
     base_url: str
+
+    #: Whether get_fees() actually queries the OPAC. When False it returns an
+    #: empty list because fees are not implemented for this library, which is
+    #: not the same as the account having none.
+    supports_fees: ClassVar[bool] = True
 
     @abstractmethod
     async def login(self, username: str, password: str) -> None:

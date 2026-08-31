@@ -9,7 +9,7 @@ import pytest
 import respx
 from freezegun import freeze_time
 
-from custom_components.stadtbibliothek.backends.base import AuthenticationError, LoanItem
+from custom_components.stadtbibliothek.backends.base import AuthenticationError, LoanItem, ParseError
 from custom_components.stadtbibliothek.backends.remseck import RemseckBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -433,3 +433,51 @@ async def test_close_closes_a_client_it_created() -> None:
     backend = RemseckBackend()
     await backend.close()
     assert backend._client.is_closed is True
+
+
+@respx.mock
+async def test_get_loans_on_a_logged_out_page_raises_parse_error(login_html: str) -> None:
+    """A session that silently expired must not look like "nothing borrowed"."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=login_html))
+    backend = RemseckBackend()
+    try:
+        with pytest.raises(ParseError):
+            await backend.get_loans()
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_loans_on_an_empty_account_returns_empty(no_checkouts_html: str) -> None:
+    """An account page without a checkout table legitimately has no loans."""
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=no_checkouts_html))
+    backend = RemseckBackend()
+    try:
+        assert await backend.get_loans() == []
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_fees_on_a_logged_out_page_raises_parse_error(login_html: str) -> None:
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(return_value=httpx.Response(200, html=login_html))
+    backend = RemseckBackend()
+    try:
+        with pytest.raises(ParseError):
+            await backend.get_fees()
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_fees_on_an_empty_account_returns_empty(no_fees_html: str) -> None:
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-account.pl").mock(return_value=httpx.Response(200, html=no_fees_html))
+    backend = RemseckBackend()
+    try:
+        assert await backend.get_fees() == []
+    finally:
+        await backend.close()
+
+
+async def test_remseck_reports_fee_support() -> None:
+    assert RemseckBackend.supports_fees is True

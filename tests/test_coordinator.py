@@ -11,6 +11,7 @@ from custom_components.stadtbibliothek.backends.base import (
     AccountInfo,
     AuthenticationError,
     LibraryType,
+    ParseError,
 )
 from custom_components.stadtbibliothek.const import (
     CONF_LIBRARY_TYPE,
@@ -216,3 +217,15 @@ async def test_renew_all_no_data_raises_update_failed():
 def test_update_interval():
     coordinator = _make_coordinator()
     assert coordinator.update_interval == timedelta(minutes=DEFAULT_SCAN_INTERVAL)
+
+
+async def test_update_data_parse_error_raises_update_failed():
+    """A changed page layout must make the entity unavailable, not report
+    zero loans -- which would look like everything had been returned."""
+    coordinator = _make_coordinator()
+    backend = AsyncMock()
+    backend.get_loans = AsyncMock(side_effect=ParseError("no account page"))
+
+    with patch.object(coordinator, "_create_backend", return_value=backend):
+        with pytest.raises(UpdateFailed, match="Unexpected page layout"):
+            await coordinator._async_update_data()

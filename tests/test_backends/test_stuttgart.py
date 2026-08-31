@@ -7,7 +7,7 @@ import httpx
 import pytest
 import respx
 
-from custom_components.stadtbibliothek.backends.base import AuthenticationError, RenewalError
+from custom_components.stadtbibliothek.backends.base import AuthenticationError, ParseError, RenewalError
 from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -401,3 +401,42 @@ async def test_close_closes_a_client_it_created() -> None:
     backend = StuttgartBackend()
     await backend.close()
     assert backend._client.is_closed is True
+
+
+@respx.mock
+async def test_get_loans_off_the_account_page_raises_parse_error() -> None:
+    """Landing back on the search page means the session died, not that
+    nothing is borrowed. Reporting zero loans there would look like every
+    item had been returned."""
+    _mock_login_flow()
+    respx.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+    )
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        with pytest.raises(ParseError):
+            await backend.get_loans()
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_loans_with_an_empty_result_section_returns_empty() -> None:
+    """A results section without a loan table means the account is empty."""
+    _mock_login_flow()
+    respx.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_no_loans.html")),
+    )
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        assert await backend.get_loans() == []
+    finally:
+        await backend.close()
+
+
+async def test_stuttgart_reports_no_fee_support() -> None:
+    """get_fees() returns [] because fees are not implemented, not because
+    the account has none -- consumers must be able to tell the difference."""
+    assert StuttgartBackend.supports_fees is False

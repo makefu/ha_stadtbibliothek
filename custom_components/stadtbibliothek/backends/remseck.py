@@ -12,6 +12,7 @@ from .base import (
     LibraryBackend,
     LibraryType,
     LoanItem,
+    ParseError,
 )
 
 
@@ -20,6 +21,9 @@ class RemseckBackend(LibraryBackend):
 
     library_type = LibraryType.REMSECK
     BASE_URL = "https://mt-remseck.lmscloud.net"
+    #: Present on every logged-in OPAC page; its absence means the session
+    #: is gone or the page layout changed.
+    ACCOUNT_MARKER = "#useraccount"
 
     def __init__(
         self,
@@ -68,8 +72,12 @@ class RemseckBackend(LibraryBackend):
                 if isinstance(val, str):
                     self._borrowernumber = val
 
+        if soup.select_one(self.ACCOUNT_MARKER) is None:
+            raise ParseError("Not a logged-in account page; the session may have expired")
+
         table = soup.find("table", id="checkoutst")
         if not table or not isinstance(table, Tag):
+            # Account page without a checkout table: nothing is borrowed.
             return []
 
         loans: list[LoanItem] = []
@@ -84,8 +92,12 @@ class RemseckBackend(LibraryBackend):
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "lxml")
+        if soup.select_one(self.ACCOUNT_MARKER) is None:
+            raise ParseError("Not a logged-in account page; the session may have expired")
+
         table = soup.find("table", id="finestable")
         if not table or not isinstance(table, Tag):
+            # Account page without a fees table: no outstanding fees.
             return []
 
         fees: list[FeeItem] = []

@@ -7,7 +7,7 @@ from html import unescape
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem, RenewalError
+from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem, ParseError, RenewalError
 
 # Fields that indicate media type prefixes in title column
 _MEDIA_TYPE_PATTERN = re.compile(r"^\[.+\]$")
@@ -15,9 +15,13 @@ _MEDIA_TYPE_PATTERN = re.compile(r"^\[.+\]$")
 
 class StuttgartBackend(LibraryBackend):
     library_type = LibraryType.STUTTGART
+    supports_fees = False
     BASE_URL = "https://stadtbibliothek-stuttgart.de"
     START_PATH = "?service=direct/0/Home/$DirectLink&sp=SOPAC"
     MAX_RENEWALS = 8
+    #: Wraps the loan listing on the Ausleihen page. Missing means aDIS sent
+    #: us somewhere else entirely, typically back to the search mask.
+    RESULTS_MARKER = "section#results"
 
     _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"
 
@@ -116,8 +120,12 @@ class StuttgartBackend(LibraryBackend):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, features="html.parser")
 
+        if soup.select_one(self.RESULTS_MARKER) is None:
+            raise ParseError("Not the Ausleihen page; the session may have expired")
+
         table = soup.select_one("table.rTable_table tbody")
         if table is None:
+            # Results section without a loan table: nothing is borrowed.
             return []
 
         loans: list[LoanItem] = []
@@ -176,6 +184,8 @@ class StuttgartBackend(LibraryBackend):
         return loans
 
     async def get_fees(self) -> list[FeeItem]:
+        # aDIS exposes fees behind a separate flow that is not implemented;
+        # supports_fees advertises that so callers do not read this as "no fees".
         return []
 
     async def renew_loan(self, item_id: str) -> bool:
