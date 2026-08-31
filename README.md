@@ -45,7 +45,7 @@ Each configured account creates three sensors:
 
 - **State:** number of active loans
 - **Attributes:**
-  - `loans` -- list of loan objects containing: `title`, `item_id`, `due_date`, `can_be_renewed`, `days_remaining`, `is_overdue`, `library` (e.g. "Remseck", "Stuttgart"), plus optional fields like `author`, `checkout_date`, `media_type`, `library_branch`, `times_renewed`, `max_renewals`, `renewals_left`, `call_number`
+  - `loans` -- list of loan objects containing: `title`, `item_id`, `due_date`, `can_be_renewed`, `days_remaining`, `is_overdue`, `library` (e.g. "Remseck", "Stuttgart"), plus optional fields like `author`, `checkout_date`, `media_type`, `library_branch`, `times_renewed`, `max_renewals`, `renewals_left`, `call_number`, `barcode`, `publisher`, `isbn`, `cover_url`, `detail_url`
 
 ### Warning (`sensor.stadtbibliothek_*_warning`)
 

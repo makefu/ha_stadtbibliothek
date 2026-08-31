@@ -26,6 +26,14 @@ class LoanItem:
     times_renewed: int = 0
     max_renewals: int | None = None
     call_number: str | None = None
+    #: Exemplar barcode, when the OPAC exposes one. Stuttgart prints it for
+    #: books but not for CDs/DVDs/games; Koha does not show it at all.
+    barcode: str | None = None
+    publisher: str | None = None
+    isbn: str | None = None
+    #: Absolute URLs, when the OPAC links them from the loan listing.
+    cover_url: str | None = None
+    detail_url: str | None = None
 
     @property
     def days_remaining(self) -> int:

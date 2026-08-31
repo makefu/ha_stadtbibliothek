@@ -52,3 +52,32 @@ def test_serialize_fee_none_date():
     fee = FeeItem(description="Misc", amount=5.00, date=None)
     result = serialize_fee(fee)
     assert result["date"] is None
+
+
+def test_serialize_loan_includes_the_bibliographic_fields():
+    """New LoanItem fields must reach consumers without serializer changes."""
+    loan = LoanItem(
+        title="Die unendliche Geschichte",
+        item_id="500001",
+        due_date=date(2026, 4, 15),
+        call_number="End",
+        barcode="12345678",
+        publisher="Thienemann",
+        isbn="9783522202602",
+        cover_url="https://example.invalid/cover.jpg",
+        detail_url="https://example.invalid/opac-detail.pl?biblionumber=12345",
+    )
+    result = serialize_loan(loan)
+    assert result["call_number"] == "End"
+    assert result["barcode"] == "12345678"
+    assert result["publisher"] == "Thienemann"
+    assert result["isbn"] == "9783522202602"
+    assert result["cover_url"] == "https://example.invalid/cover.jpg"
+    assert result["detail_url"].endswith("biblionumber=12345")
+
+
+def test_serialize_loan_defaults_the_bibliographic_fields_to_none():
+    loan = LoanItem(title="Test", item_id="1", due_date=date.today())
+    result = serialize_loan(loan)
+    for key in ("barcode", "publisher", "isbn", "cover_url", "detail_url"):
+        assert result[key] is None
