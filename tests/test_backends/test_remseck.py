@@ -598,3 +598,34 @@ async def test_stuttgart_fetch_details_is_a_no_op() -> None:
         await backend.close()
 
     assert StuttgartBackend.supports_details is False
+
+
+@respx.mock
+async def test_the_checkouts_page_needs_no_useraccount_wrapper(checkouts_html: str) -> None:
+    """A current Koha wraps only some tabs in #useraccount -- the fees page
+    has it, the checkouts page does not. Depending on it made a perfectly good
+    session look expired, and every loan vanish."""
+    assert 'id="useraccount"' not in checkouts_html
+
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=checkouts_html))
+    backend = RemseckBackend()
+    try:
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert len(loans) == 4
+
+
+@respx.mock
+async def test_any_masthead_login_marker_is_enough(no_checkouts_html: str) -> None:
+    """Which marker a Koha renders varies by version, so any one will do."""
+    for marker in ("logout", "loggedinusername", "loggedinuser-menu"):
+        assert marker in no_checkouts_html
+
+    respx.get(f"{BASE_URL}/cgi-bin/koha/opac-user.pl").mock(return_value=httpx.Response(200, html=no_checkouts_html))
+    backend = RemseckBackend()
+    try:
+        assert await backend.get_loans() == []
+    finally:
+        await backend.close()

@@ -26,9 +26,12 @@ class RemseckBackend(LibraryBackend):
 
     library_type = LibraryType.REMSECK
     BASE_URL = "https://mt-remseck.lmscloud.net"
-    #: Present on every logged-in OPAC page; its absence means the session
-    #: is gone or the page layout changed.
-    ACCOUNT_MARKER = "#useraccount"
+    #: Signs of a logged-in session, in the masthead that every OPAC page
+    #: shares. Any one of them is enough: which are present varies by Koha
+    #: version, and #useraccount in particular wraps only some of the tabs --
+    #: on a current install it is on the fees page but not on the checkouts
+    #: page, so relying on it alone made a working session look expired.
+    ACCOUNT_MARKERS = ("#logout", ".loggedinusername", "#loggedinuser-menu", "#useraccount")
     #: Koha renders this graphic when it has no jacket for a record.
     NO_COVER_MARKER = "no-image"
     supports_details = True
@@ -75,8 +78,7 @@ class RemseckBackend(LibraryBackend):
                 if isinstance(val, str):
                     self._borrowernumber = val
 
-        if soup.select_one(self.ACCOUNT_MARKER) is None:
-            raise ParseError("Not a logged-in account page; the session may have expired")
+        self._require_logged_in(soup)
 
         table = soup.find("table", id="checkoutst")
         if not table or not isinstance(table, Tag):
@@ -92,8 +94,7 @@ class RemseckBackend(LibraryBackend):
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "lxml")
-        if soup.select_one(self.ACCOUNT_MARKER) is None:
-            raise ParseError("Not a logged-in account page; the session may have expired")
+        self._require_logged_in(soup)
 
         table = soup.find("table", id="finestable")
         if not table or not isinstance(table, Tag):
@@ -104,6 +105,17 @@ class RemseckBackend(LibraryBackend):
         for row in table.select("tbody tr"):
             fees.append(self._parse_fee_row(row))
         return fees
+
+    def _require_logged_in(self, soup: BeautifulSoup) -> None:
+        """Fail loudly when the page is not a logged-in account page.
+
+        Returning an empty list here would be indistinguishable from an
+        account with nothing on it, which is how a scraper silently erases a
+        borrowing history.
+        """
+        if any(soup.select_one(marker) for marker in self.ACCOUNT_MARKERS):
+            return
+        raise ParseError("Not a logged-in account page; the session may have expired")
 
     async def renew_loan(self, item_id: str) -> bool:
         if not self._borrowernumber:

@@ -8,3 +8,7 @@ result
 *.egg-info/
 dist/
 .claude
+
+# Live account dumps from probing; contain real borrowing data.
+*_real_*.html
+*.local.html

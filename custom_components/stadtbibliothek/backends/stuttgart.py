@@ -21,9 +21,10 @@ class StuttgartBackend(LibraryBackend):
     BASE_URL = "https://stadtbibliothek-stuttgart.de"
     START_PATH = "?service=direct/0/Home/$DirectLink&sp=SOPAC"
     MAX_RENEWALS = 8
-    #: Wraps the loan listing on the Ausleihen page. Missing means aDIS sent
-    #: us somewhere else entirely, typically back to the search mask.
-    RESULTS_MARKER = "section#results"
+    #: The loan listing itself. aDIS renders it only on a result page, so its
+    #: absence means we were sent somewhere else entirely -- typically back to
+    #: the search mask after the session timed out.
+    RESULTS_MARKER = "table.rTable_table"
 
     CLIENT_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"}
 
@@ -116,12 +117,16 @@ class StuttgartBackend(LibraryBackend):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, features="html.parser")
 
-        if soup.select_one(self.RESULTS_MARKER) is None:
+        listing = soup.select_one(self.RESULTS_MARKER)
+        if listing is None:
+            # Erring towards an error rather than an empty list is deliberate:
+            # a wrong "nothing borrowed" silently erases a borrowing history,
+            # whereas a wrong error is merely noisy and self-correcting.
             raise ParseError("Not the Ausleihen page; the session may have expired")
 
-        table = soup.select_one("table.rTable_table tbody")
+        table = listing.select_one("tbody")
         if table is None:
-            # Results section without a loan table: nothing is borrowed.
+            # The listing is there but has no body: nothing is borrowed.
             return []
 
         loans: list[LoanItem] = []
