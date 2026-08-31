@@ -63,6 +63,17 @@
               ${pythonWithDeps}/bin/python ${./.}/tests/integration/test_stuttgart_live.py "$@"
             ''}";
           };
+          # Re-records tests/test_backends/fixtures/recorded/ from the live
+          # OPACs. Writes into the working tree, not the store copy, so the
+          # refreshed fixtures land where they can be committed.
+          record-fixtures = {
+            type = "app";
+            program = "${pkgs.writeShellScript "record-fixtures" ''
+              root="$(${pkgs.git}/bin/git rev-parse --show-toplevel)"
+              export PYTHONPATH="$root"
+              ${pythonWithDeps}/bin/python "$root/tests/integration/record_fixtures.py" "$@"
+            ''}";
+          };
         }
       );
 

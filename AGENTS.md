@@ -33,8 +33,11 @@ tests/
     test_base.py       # LoanItem/FeeItem dataclass tests
     test_remseck.py    # Remseck backend parsing + renewal logic tests
     test_stuttgart.py   # Stuttgart backend parsing tests
-    fixtures/          # HTML fixtures for backend tests
+    test_recorded_pages.py # Parsing asserted against the live recordings
+    fixtures/          # Constructed HTML fixtures for backend tests
+      recorded/        # Verbatim captures of the live OPACs (see its README)
   integration/         # Live integration tests (require credentials)
+    record_fixtures.py # Re-records fixtures/recorded/ and anonymises them
 ```
 
 ## Development Environment
@@ -67,6 +70,25 @@ Require credentials in a YAML secrets file:
 nix run .#integration-remseck -- /path/to/.secrets.yml
 SECRETS_FILE=/path/to/.secrets.yml nix run .#integration-stuttgart
 ```
+
+### Recorded Fixtures
+
+`tests/test_backends/fixtures/recorded/` holds verbatim captures of both live
+OPACs, and `test_recorded_pages.py` asserts the parsers against them. They
+exist because the constructed fixtures have twice described markup the real
+servers never sent, and both times a backend was "fixed" to match the fixture
+and broke against the library.
+
+Prefer adding a case there over inventing markup. To refresh the whole set:
+
+```sh
+nix run .#record-fixtures -- /path/to/.secrets.yml
+```
+
+That reads both accounts, never renews, and refuses to write a page it can
+still find the account holder in. Anything derived from a recording -- an
+empty account, a renewal response -- belongs in the constructed fixtures
+one directory up, with a comment saying what it was derived from.
 
 ### NixOS VM Test
 
