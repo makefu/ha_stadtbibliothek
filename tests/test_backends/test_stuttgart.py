@@ -2,12 +2,18 @@
 
 from datetime import date
 from pathlib import Path
+from urllib.parse import parse_qs, unquote_plus
 
 import httpx
 import pytest
 import respx
 
-from custom_components.stadtbibliothek.backends.base import AuthenticationError, ParseError, RenewalError
+from custom_components.stadtbibliothek.backends.base import (
+    AuthenticationError,
+    LoanItem,
+    ParseError,
+    RenewalError,
+)
 from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -504,3 +510,185 @@ async def test_media_row_without_a_publisher() -> None:
     assert dvd.publisher is None
     assert dvd.call_number == "M-DVD-S LEB"
     assert dvd.item_id == "M-DVD-S LEB"
+
+
+# --- catalogue-search covers (recorded pages) ----------------------------
+
+RECORDED = Path(__file__).parent / "fixtures" / "recorded"
+
+
+def _read_recorded(name: str) -> str:
+    return (RECORDED / name).read_text(encoding="utf-8")
+
+
+#: The search response the live OPAC gave for each fixture title -- recorded
+#: verbatim and anonymised like the other recordings. The keys are the titles
+#: as the loan listing spells them, because the router below dispatches on
+#: exactly what the backend put into the search box.
+_SEARCH_PAGES = {
+    "Die drei Fragezeichen - Folge 220": "stuttgart_search_00.html",
+    "Der kleine Prinz": "stuttgart_search_01.html",
+    "Catan - Das Spiel": "stuttgart_search_02.html",
+    "Python Crashkurs": "stuttgart_search_03.html",
+    "Das Leben der Anderen": "stuttgart_search_04.html",
+    "Der Koboldmaki und der große Sturm": "stuttgart_search_05.html",
+}
+
+
+def _mock_opac() -> None:
+    """Serve the whole session -- login and every catalogue search -- off the
+    routes the backend walks, dispatching each POST on its posted fields."""
+    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+    )
+
+    def route(request: httpx.Request) -> httpx.Response:
+        fields = {key: values[0] for key, values in parse_qs(request.content.decode(), keep_blank_values=True).items()}
+        page = _SEARCH_PAGES.get(unquote_plus(fields.get("$Autosuggest", "")))
+        if page is not None:
+            return httpx.Response(200, text=_read_recorded(page))
+        if "$Textfield$0" in fields:
+            return httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html"))
+        if "SUO1_AUTHFU_1_hidden" in fields:
+            return httpx.Response(200, text=_read_fixture("stuttgart_login_form.html"))
+        return httpx.Response(404)
+
+    respx.post(SESSION_URL).mock(side_effect=route)
+
+
+@respx.mock
+async def test_fetch_details_fills_covers_from_the_catalogue_search() -> None:
+    """The loan listing carries no image at all: a cover comes from looking
+    the title up in the OPAC's catalogue search, whose result rows keep the
+    jacket in a lazily-loaded data-src."""
+    _mock_opac()
+    respx.get(url__regex=r".*SBK00000001.*").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
+    )
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        loans = await backend.get_loans()
+        for loan in loans:
+            await backend.fetch_details(loan)
+    finally:
+        await backend.close()
+
+    by_title = {loan.title: loan for loan in loans}
+    token = "access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e"
+    assert by_title["Python Crashkurs"].cover_url == f"https://api.vlb.de/api/v1/cover/9783864909894/s?{token}"
+    # Matched the catalogue's spelling, "Catan : das Spiel", not the listing's
+    # "Catan - Das Spiel".
+    assert by_title["Catan - Das Spiel"].cover_url == f"https://api.vlb.de/api/v1/cover/4002051684655/s?{token}"
+    assert by_title["Der kleine Prinz"].cover_url == f"https://api.vlb.de/api/v1/cover/4251192162243/s?{token}"
+
+    # A title the search has no row for keeps no cover: taking the first
+    # unrelated hit's jacket would illustrate every miss with the same book.
+    assert by_title["Die drei Fragezeichen - Folge 220"].cover_url is None
+    assert by_title["Das Leben der Anderen"].cover_url is None
+
+
+@respx.mock
+async def test_fetch_details_reads_a_single_hit_detail_page() -> None:
+    """An exact-title search skips the result list: aDIS answers a single hit
+    with its Vollanzeige, where the cover sits in the detail block."""
+    _mock_opac()
+    loan = LoanItem(title="Der Koboldmaki und der große Sturm", item_id="1", due_date=date(2026, 10, 1))
+
+    backend = StuttgartBackend()
+    try:
+        assert await backend.fetch_details(loan) is loan
+    finally:
+        await backend.close()
+
+    token = "access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e"
+    assert loan.cover_url == f"https://api.vlb.de/api/v1/cover/9783741527968/m/?{token}"
+
+
+@respx.mock
+async def test_the_cover_search_asks_the_catalogue_not_the_info_pages() -> None:
+    """Without SRCHAW=Katalog the same form searches the website's Infoseiten
+    and returns a page with neither rows nor covers."""
+    _mock_opac()
+    backend = StuttgartBackend()
+    try:
+        await backend.fetch_details(LoanItem(title="Python Crashkurs", item_id="1", due_date=date(2026, 10, 1)))
+    finally:
+        await backend.close()
+
+    searches = []
+    for call in respx.calls:
+        if call.request.method != "POST":
+            continue
+        fields = {
+            key: values[0] for key, values in parse_qs(call.request.content.decode(), keep_blank_values=True).items()
+        }
+        if unquote_plus(fields.get("$Autosuggest", "")) == "Python Crashkurs":
+            searches.append(fields)
+    assert searches, "fetch_details ran no catalogue search"
+    for fields in searches:
+        assert fields.get("SRCHAW") == "Katalog"
+
+
+@respx.mock
+async def test_a_search_page_about_another_query_yields_no_cover() -> None:
+    """aDIS keeps the previous result set in the session and hands it back
+    when queried too fast. A detail page echoing a different query is not
+    about this loan, and its cover is the wrong image."""
+    _mock_opac()
+    respx.post(SESSION_URL).mock(
+        return_value=httpx.Response(200, text=_read_recorded("stuttgart_search_05.html")),
+    )
+    loan = LoanItem(title="Ein ganz anderes Buch", item_id="1", due_date=date(2026, 10, 1))
+
+    backend = StuttgartBackend()
+    try:
+        await backend.fetch_details(loan)
+    finally:
+        await backend.close()
+
+    assert loan.cover_url is None
+
+
+@respx.mock
+async def test_a_failing_cover_search_leaves_the_loan_untouched() -> None:
+    """One title's lookup must never fail the whole refresh: the sensor still
+    has a loan listing to show."""
+    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
+        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+    )
+    respx.post(SESSION_URL).mock(side_effect=httpx.ConnectError("connection refused"))
+
+    loan = LoanItem(title="Irgendwas", item_id="1", due_date=date(2026, 10, 1))
+    backend = StuttgartBackend()
+    try:
+        assert await backend.fetch_details(loan) is loan
+    finally:
+        await backend.close()
+
+    assert loan.cover_url is None
+
+
+def test_stuttgart_supports_details() -> None:
+    """The lookup costs one request per loan, so the coordinator only pays for
+    it when the backend advertises it."""
+    assert StuttgartBackend.supports_details is True
+
+
+def test_norm_title_folds_the_noise_the_two_pages_spell_differently() -> None:
+    """Non-filing marks, media brackets, ß versus ss, punctuation: the listing
+    and the result page write one title differently, and the join key has to
+    make them compare equal."""
+    assert StuttgartBackend._norm_title("¬Der¬ Koboldmaki und der große Sturm") == StuttgartBackend._norm_title(
+        "Der Koboldmaki und der grosse Sturm"
+    )
+    assert StuttgartBackend._norm_title("[CD] An Teich und Fluss") == StuttgartBackend._norm_title("An Teich und Fluss")
+    assert StuttgartBackend._norm_title("Catan - Das Spiel") == StuttgartBackend._norm_title("Catan : das Spiel")
+
+
+def test_bare_title_drops_subtitle_and_brackets() -> None:
+    assert StuttgartBackend._bare_title("Der Ernst des Lebens : eine Stunde voller Wörterwunder") == (
+        "Der Ernst des Lebens"
+    )
+    assert StuttgartBackend._bare_title("An und aus, wie geht das? [CD]") == "An und aus, wie geht das?"

@@ -13,7 +13,8 @@ recordings are the counterweight: whatever the real servers send, they say so.
 
 ## Provenance
 
-Captured 2026-08-31 from the accounts in `.secrets.yml`.
+Captured 2026-08-31 from the accounts in `.secrets.yml`; the
+`stuttgart_search_*` pages on 2026-09-28.
 
 | File | Request | Notes |
 | --- | --- | --- |
@@ -26,10 +27,19 @@ Captured 2026-08-31 from the accounts in `.secrets.yml`.
 | `stuttgart_login_form.html` | `POST` of step 1 | The credentials form. |
 | `stuttgart_account.html` | `POST` of the credentials | "Mein Konto", carrying `div#konto-services`. |
 | `stuttgart_ausleihen.html` | `GET` the Ausleihen link | aDIS/BMS, 11 loans. |
+| `stuttgart_search_00..04.html` | `POST` of the start-page search form, one query per loan title of the *constructed* `../stuttgart_ausleihen.html`, `SRCHAW=Katalog` | The cover route: result rows (`li.rList_li`) with lazily-loaded `api.vlb.de` jackets in `data-src`. `00`/`04` answer with rows that match no title; `00` even landed on the home page. |
+| `stuttgart_search_05.html` | same, query "Der Koboldmaki und der große Sturm" | A query the OPAC answers with a single-hit Vollanzeige (`div.show-full-basics`, no result rows): the cover sits in the detail block, and `p.info` echoes the query. |
 
 No renewal response is recorded: renewing is a real change to a real account,
 and the recorded Remseck loans were all inside their `no-renewal-before`
 window anyway. The renewal fixtures one directory up stay constructed.
+
+The search fixtures are keyed to the constructed fixture's titles, not to
+whatever was out on the live account, because `test_stuttgart.py` routes its
+search mock on those titles; the recorder reads `../stuttgart_ausleihen.html`
+to build the queries. Refreshing them re-records the responses to those exact
+queries, so a catalogue retitle can still break the pinned cover URLs -- the
+tests then fail loudly with the expected-URL assertion, which is the intent.
 
 ## What was removed
 

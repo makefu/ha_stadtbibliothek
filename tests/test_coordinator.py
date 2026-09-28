@@ -229,3 +229,51 @@ async def test_update_data_parse_error_raises_update_failed():
     with patch.object(coordinator, "_create_backend", return_value=backend):
         with pytest.raises(UpdateFailed, match="Unexpected page layout"):
             await coordinator._async_update_data()
+
+
+async def test_update_data_enriches_loans_when_the_backend_offers_details(mock_backend, sample_loans):
+    """Covers cost one request per loan, so the coordinator asks only when the
+    backend advertises it -- and passes each loan through exactly once."""
+    mock_backend.supports_details = True
+    seen: list[str] = []
+
+    async def enrich(loan):
+        seen.append(loan.item_id)
+        loan.cover_url = "https://cover.example/x.jpg"
+        return loan
+
+    mock_backend.fetch_details = AsyncMock(side_effect=enrich)
+    coordinator = _make_coordinator()
+    with patch.object(coordinator, "_create_backend", return_value=mock_backend):
+        data = await coordinator._async_update_data()
+
+    assert seen == [loan.item_id for loan in sample_loans]
+    assert data.loans == sample_loans
+    assert all(loan.cover_url == "https://cover.example/x.jpg" for loan in data.loans)
+
+
+async def test_a_failed_detail_lookup_keeps_the_loan_but_not_the_cover(mock_backend, sample_loans):
+    """One title's lookup timing out must not fail the refresh: the sensor
+    still has its loan listing, just without that cover."""
+    mock_backend.supports_details = True
+    mock_backend.fetch_details = AsyncMock(side_effect=TimeoutError("search timed out"))
+    coordinator = _make_coordinator()
+
+    with patch.object(coordinator, "_create_backend", return_value=mock_backend):
+        data = await coordinator._async_update_data()
+
+    assert data.loans == sample_loans
+    assert all(loan.cover_url is None for loan in data.loans)
+
+
+async def test_update_data_skips_details_when_unadvertised(mock_backend):
+    """Polling every few minutes: a backend that advertises nothing must not
+    be billed for a request per loan."""
+    mock_backend.supports_details = False
+    mock_backend.fetch_details = AsyncMock()
+    coordinator = _make_coordinator()
+
+    with patch.object(coordinator, "_create_backend", return_value=mock_backend):
+        await coordinator._async_update_data()
+
+    mock_backend.fetch_details.assert_not_awaited()

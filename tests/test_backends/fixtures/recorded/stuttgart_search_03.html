@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="de"><head>
+	<style>
+		@import url(css/aDISStandard.css);
+	</style>
+	<script src="js/aDISMain.min.js"></script>
+	<script src="js/fckeditor/fckeditor.js"></script>
+	<title> Trefferliste - Stadtbibliothek Stuttgart </title>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,shrink-to-fit=no">
+<meta name="description" content="OPAC der Stadtbibliothek Stuttgart">
+<!--
+(c) Software: aDIS/BMS und aDIS/Archiv von aStec angewandte Systemtechnik - www.astec.de
+STU, OPAC01 de V8.62/40 0309-1453
+//-->
+<script src="/aDISWeb_kopac86/js/scripts-head.js"></script>
+<link rel="stylesheet" href="/aDISWeb_kopac86/css/kopac_style.css"><link rel="stylesheet" media="screen, projection" href="css/POOLM02QPRODXYZ@_00000001_00000001.css"/><link rel="stylesheet" media="screen, projection" href="css/POOLM02QPRODXYZ@_00000002_00000002.css"/>
+<!--[if lt IE 9]><script src="/aDISWeb_kopac86/js/html5shiv-printshiv.min.js"></script><script src="/aDISWeb_kopac86/js/css3-mediaqueries.js"></script><![endif]-->
+<link rel="shortcut icon" type="image/x-icon" href="/aDISWeb_stu/images/favicon.ico">
+</head>
+<body class="opac01">
+<script><!--
+
+
+
+
+
+
+aDIS.sendBackRequest = function(e) {
+  if(e.state != null && e.state.action)
+    location.href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$BrowserBack";
+}
+
+
+
+
+
+
+
+function startIdleTimer() {
+  if (typeof idleId != 'undefined')
+    clearTimeout(idleId)
+  idleId = window.setTimeout("to('"+ idleLink + "')", idleTime);
+}			
+function to(link) {
+  location.href=link;
+}
+
+
+
+
+
+function setupaDISHandlers()  {
+  aDIS.addListener("mousedown",document, aDIS.docOnEvent);
+  aDIS.addListener("keydown",document, aDIS.docOnEvent);
+  aDIS.addListener("keyup",document, aDIS.docOnEvent);
+  aDIS.addListener("click",document, aDIS.docOnEvent); 
+
+  aDIS.initFormElements();
+  aDIS.initIframes();
+  aDIS.initScrollPos();
+}
+
+
+
+
+
+
+aDISAjax.URL = "/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=aDISAjax/POOLM02QPRODXYZ@_00000012_00000012/$AjaxScript";
+
+
+
+
+
+  var UserAgent = navigator.userAgent.toLowerCase();
+  var mobileBrowser = false;
+  if (UserAgent.search(/(iphone|ipod|ipad|opera mini|fennec|palm|blackberry|android|symbian|series60)/) != -1)
+    mobileBrowser = true;
+  
+  aDIS.isFirstFocusAllowed = function(el){
+    if(el && !mobileBrowser){
+
+      var yPos = el.getBoundingClientRect().top;
+      var pageScroll = document.forms[0].scrollPos.value;
+      
+      if(pageScroll == 0 || yPos > 0)
+       return true;
+    }
+
+    return false;
+
+}
+
+
+
+
+
+
+function aDISTimeoutCounter() {
+  this.alertModalEl = null;
+  this.alertModalElWrapper = null;
+  this.alertHiddenInterval = 0;
+  this.sessionEndDate = null;
+  this.activeElementBefore = null;
+    
+  this.init = function(mins, alertInterval, modalAt) {
+    if(mins == 0) return;
+    this.label = document.getElementById("adis-timeoutcounter-label");
+    if(this.label == null) return;
+    this.labelWrapper = document.querySelector("p.adis-timeout-counter");
+    if(this.labelWrapper == null) return;
+
+    this.time = {mins:0, secs:0, initTo:0, alertAt: 0, modalAt:0};
+    this.time.initTo = this.time.mins = mins;
+    
+    if(alertInterval > 0){
+      if(this.time.mins < 10)
+        alertInterval = 1;
+      if((this.time.mins - alertInterval) < 0)
+        return;
+      this.time.alertAt = this.time.mins - this.alertInterval;
+    }
+    
+    this.timer=setInterval(this.run.bind(this), 1000); //1000 = 1 second
+      
+    if(modalAt != 0){
+      var but = document.getElementById("adis-timeoutcounter-reloader");
+      if(but != null) 
+        but.addEventListener("click", this.reset.bind(this));
+      this.alertModalElWrapper = document.getElementById("adis-timeout-alert-modal-wrapper");
+      this.alertModalEl = document.getElementById("adis-timeout-alert-modal");
+      this.time.modalAt = modalAt;  
+    }
+
+    this.labelUpdateShow();
+  };
+  
+  this.reset = function(){
+    var response = aDISAjax.makeReq("GET", {"url" : "/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=aDISTimeoutRefresh/POOLM02QPRODXYZ@_00000012_00000012/$TimeoutCounter&requestCount=2"});
+    if (response.success) {
+      this.time.mins =  this.time.initTo;
+      this.time.alertAt =  this.time.mins - this.alertHiddenInterval;
+      this.time.secs = 0;
+
+      var dt = new Date();
+      dt = dt.setMinutes(dt.getMinutes() + this.time.mins);
+      this.sessionEndDate = new Date(dt);
+    }
+    this.modalHide();
+    this.labelUpdateShow();
+  };
+  
+  this.modalShow = function(){
+    if(this.alertModalElWrapper == null) return;
+    this.alertModalElWrapper.classList.remove("adis-hidden");
+    this.alertModalElWrapper.style.display = 'block';
+    if(this.alertModalEl == null) return;
+    this.alertModalEl.classList.remove("adis-alert-inactive");
+    //hide adis-timeoutcounter-label
+    this.labelWrapper.classList.add("adis-hidden");
+    //set focus to modal button and rememeber focus element it was before
+    if(document.getElementById("adis-timeoutcounter-reloader") == null) return;
+    this.activeElementBefore = document.activeElement;
+    document.getElementById("adis-timeoutcounter-reloader").focus();
+  };
+  
+  this.modalHide = function(){
+    if(this.alertModalElWrapper == null) return;
+    if(this.alertModalElWrapper.classList.contains("adis-hidden"))
+      return;
+    this.alertModalElWrapper.classList.add("adis-hidden");
+    this.alertModalElWrapper.style.display = 'none';
+    if(this.alertModalEl == null) return;
+    this.alertModalEl.classList.add("adis-alert-inactive");
+    //show adis-timeoutcounter-label
+    this.labelWrapper.classList.remove("adis-hidden");
+    //set focus to element it was before modal
+    if(this.activeElementBefore == null) return;
+    this.activeElementBefore.focus();
+    this.activeElementBefore = null;
+  };
+
+  this.labelUpdateShow = function() {
+    var dt = new Date();
+    dt = dt.setMinutes(dt.getMinutes() + this.time.initTo);
+    this.sessionEndDate = new Date(dt);
+    this.label.innerHTML = this.addZero(this.sessionEndDate.getHours()) + ":" + this.addZero(this.sessionEndDate.getMinutes()) + " Uhr";
+    this.labelWrapper.classList.remove("adis-hidden");
+    document.getElementById("adis-timeout-modal-endtime").innerHTML = this.addZero(this.sessionEndDate.getHours()) + ":" + this.addZero(this.sessionEndDate.getMinutes()) + " Uhr";
+  };
+
+  this.addZero = function(i) {
+    if (i < 10) {i = "0" + i}
+    return i;
+  };
+   
+  this.run = function() {
+    if(this.time.secs > 0){
+      if(this.time.secs == 1){
+        if(this.time.modalAt > 0 && this.time.modalAt == this.time.mins)
+          this.modalShow();
+        if( this.time.alertAt >= 0 && this.time.alertAt == this.time.mins){ 
+          this.time.alertAt = (this.time.alertAt < 10)? --this.time.alertAt : this.time.alertAt-this.alertHiddenInterval;
+        }    
+      }
+      --this.time.secs;
+    }
+    else{
+      --this.time.mins;
+      if(this.time.mins >= 0){
+        this.time.secs = 59;
+      }
+      else{
+        clearInterval(this.timer);
+        this.modalHide();
+        return;
+      }
+    }
+  };
+    
+};
+aDISTimeoutCounter.prototype = {
+  constuctor : aDISTimeoutCounter
+};
+ 
+
+
+
+
+
+
+RButton.add("lrb_0_12","AK02349614","lcont_0","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_1_12","AK02292562","lcont_1","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_1_13","AK02292562","lcont_1","BM3600","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_2_12","AK02289057","lcont_2","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_2_13","AK02289057","lcont_2","BM3600","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_3_12","AK02313880","lcont_3","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_4_12","AK02273893","lcont_4","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_4_13","AK02273893","lcont_4","BM3600","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_5_12","AK02129397","lcont_5","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_5_13","AK02129397","lcont_5","BM3600","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_6_12","AK02149607","lcont_6","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_6_13","AK02149607","lcont_6","BM3600","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_7_12","AK02056126","lcont_7","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+RButton.add("lrb_8_12","AK00356021","lcont_8","BM6314","", "rbutton button-inactive", "rpanel content-inactive");
+
+
+
+
+aDIS.onLoad = function (e)
+{
+
+
+
+if (history.pushState && history.state == null) {
+  history.pushState({ action : 1 }, "", null);
+  history.pushState({ action : 2 }, "", null);
+}       
+
+window.onpopstate = function (e){  
+  aDIS.sendBackRequest(e);
+}
+
+
+
+
+  idleTime=1800000;
+  idleLink="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$Timeout";
+  startIdleTimer();
+
+
+  if (!e) var e = window.event;
+  document.forms[0].scriptEnabled.value=true;
+  if (self.specialOnLoad != undefined)
+    specialOnLoad(e);
+  setupaDISHandlers();
+  aDIS.getDimensions();
+
+
+  aDIS.Suggest["Autosuggest"] = new Suggester({inputid:"Autosuggest",listid:"listAutosuggest",rule:"BM9316", minchars:3, searchhistory:true, ajaxcontext:"", observes:""}); 
+
+
+      var el = document.Form0.$Autosuggest;
+      if(aDIS.isFirstFocusAllowed(el))
+       el.focus();
+    
+
+
+timeOutCounter = new aDISTimeoutCounter(); //global var
+timeOutCounter.init(30, 5, 2);
+
+
+
+
+  aDIS.loadDelayedImg();
+
+
+
+
+
+
+
+
+
+
+
+}
+
+aDIS.addListener('load', window, aDIS.onLoad);
+
+
+// --></script>
+<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF" onsubmit="return formOnSubmit();">
+<input type="hidden" name="service" value="direct/1/POOLM02QPRODXYZ@_00000012_00000012/$Form.form"/>
+<input type="hidden" name="sp" value="S0"/>
+<input type="hidden" name="Form0" value="focus,keyCode,stz,source,selected,requestCount,scriptEnabled,scrollPos,scrDim,winDim,imgDim,SEL1_AUTHFU_1,$ScriptButton,$Autosuggest,select,$FormConditional,textButton,$FormConditional$0,textButton$0,$Toolbar,cellCheck,cellCheck$0,cellCheck$1,cellCheck$2,cellCheck$3,cellCheck$4,cellCheck$5,cellCheck$6,cellCheck$7,$Toolbar$0,$FormConditional$1,textButton$1,$FormConditional$2,textButton$2,$FormConditional$3,textButton$3,$FormConditional$4,textButton$4,$FormConditional$5,textButton$5,$FormConditional$6,textButton$6,$FormConditional$7,textButton$7,$FormConditional$8,textButton$8,textButton$9"/>
+<input type="hidden" name="focus" value=""/>
+<input type="hidden" name="keyCode" value="0"/>
+<input type="hidden" name="stz" value=""/>
+<input type="hidden" name="source" value=""/>
+<input type="hidden" name="selected" value=""/>
+<input type="hidden" name="requestCount" value="1"/>
+<input type="hidden" name="scriptEnabled" value="F"/>
+<input type="hidden" name="scrollPos" value="0"/>
+<input type="hidden" name="scrDim" value=""/>
+<input type="hidden" name="winDim" value=""/>
+<input type="hidden" name="imgDim" value=""/>
+<input type="hidden" name="$FormConditional" value="T"/>
+<input type="hidden" name="$FormConditional$0" value="T"/>
+<input type="hidden" name="$FormConditional$1" value="T"/>
+<input type="hidden" name="$FormConditional$2" value="T"/>
+<input type="hidden" name="$FormConditional$3" value="T"/>
+<input type="hidden" name="$FormConditional$4" value="T"/>
+<input type="hidden" name="$FormConditional$5" value="T"/>
+<input type="hidden" name="$FormConditional$6" value="T"/>
+<input type="hidden" name="$FormConditional$7" value="T"/>
+<input type="hidden" name="$FormConditional$8" value="T"/>
+				 <div id="wrapper">
+    <div id="wrapper-inside">
+       <nav id="sprunglinks" aria-label="Sprunglinks">
+        <ul>
+          <li><a class="sprung" href="#main">Hauptinhalt</a></li>
+        </ul>
+      </nav>
+
+<!-- BEGIN Sticky-Wrapper -->
+    <div class="sticky-wrapper">
+      <header id="header">
+        <div class="inside">
+           <div id="mhead-meta" class="block">
+            <div id="mhead-meta-inside">
+               <nav id="mnav" class="mod_navigation block" aria-label="An-/Abmelden am Bibliothekssystem">
+                <ul>
+                  <li class="nav-login"><!-- An-/Abmelde-Button als input --><input type="button" name="SEL1_AUTHFU_1" value="Anmelden" onclick="setHiddenField('SEL1_AUTHFU_1', 'SEL1_AUTHFU_1_hidden', 'L1');"/><input type="hidden" name="SEL1_AUTHFU_1_hidden" value=""/> </li>
+                  <li class="nav-konto"><a href="javascript:top.htmlOnLink('*SBK')"><span>Mein Konto</span></a></li>
+                  <li class="nav-logout"><a href="javascript:top.htmlOnLink('*SE')"><span>Sitzung beenden</span></a></li>
+                </ul>
+              </nav>
+               <nav id="lnav" class="mod_navigation block" aria-label="Service-Men&uuml;">
+                <ul>
+                  <li class="nav-kontakt"><a href="javascript:top.htmlOnLink('*SW335')"><span>Kontakt</span></a></li>
+                  <li class="nav-leichte-sprache"><a href="javascript:top.htmlOnLink('*SW140')"></a></li>
+                  <li class="nav-gebaerdensprache"><a href="javascript:top.htmlOnLink('*SW338')"></a></li>
+                </ul>
+              </nav>
+             </div>
+          </div>
+           <div id="mhead" class="block">
+            <div id="mhead-inside">
+               <div id="logo">
+                <a href="javascript:top.htmlOnLink('*SW4')" title="Startseite der Stadtbibliothek" aria-label="Startseite der Stadtbibliothek">
+                  <img class="img-standard" src="/aDISWeb_stu/images/logo.svg" width="147" height="168" alt="Logo">
+                  <img class="img-fixed" src="/aDISWeb_stu/images/logo-fixed.svg" alt="Logo" width="73" height="84">
+                </a>
+              </div>
+               <div id="slogan-wrapper">
+                <div id="spruch">
+                  <a href="javascript:top.htmlOnLink('*SW42')"><span>Stadtbibliothek Stuttgart</span> </a>
+                </div>
+              </div>
+               <nav id="fontsizer" aria-label="Schriftgr&ouml;&szlig;e">
+                <ul>
+                  <li><a href="#" id="small" data-set-font-size="small"><span class="schrift">Schrift</span> <span class="schriftgroesse">klein</span></a></li>
+                  <li><a href="#" id="normal" data-set-font-size="medium" class="selected"><span class="schrift">Schrift</span> <span class="schriftgroesse">normal</span></a></li>
+                  <li><a href="#" id="big" data-set-font-size="large"><span class="schrift">Schrift</span> <span class="schriftgroesse">gro&szlig;</span></a></li>
+                </ul>
+              </nav>
+             </div>
+          </div>
+           <div class="nav-wrapper">
+            <nav id="hnav" class="mod_navigation block" aria-label="Hauptnavigation">
+              <button id="main-menu-state" type="button" data-menu-state="hidden" aria-controls="main-menu">
+                <span class="main-menu-btn-icon" aria-hidden="true"></span>
+                <span class="main-menu-btn-text">Navigation</span>
+              </button>
+              <ul class="cssmenu_ul sm sm-style" id="main-menu">
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink.directlink&amp;sp=S%24%24GFBO_41&amp;sp=SW41&amp;requestCount=1" data-fld="$$GFBO_41" title="">Bibliotheken</a></li>
+<li class="cssmenu_ul"><a href="#">Bestand</a>
+<ul class="menufts">
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$0.directlink&amp;sp=S%24%24GFBO_42&amp;sp=SW301&amp;requestCount=1" data-fld="$$GFBO_42" title="">Neuerwerbungen</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$1.directlink&amp;sp=S%24%24GFBO_43&amp;sp=SW303&amp;requestCount=1" data-fld="$$GFBO_43" title="">Themenwelten</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$2.directlink&amp;sp=S%24%24GFBO_44&amp;sp=SW304&amp;requestCount=1" data-fld="$$GFBO_44" title="">Wir empfehlen</a></li>
+</ul></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$3.directlink&amp;sp=S%24%24GFBO_45&amp;sp=SW5&amp;requestCount=1" data-fld="$$GFBO_45" title="">eBibliothek</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$4.directlink&amp;sp=S%24%24GFBO_46&amp;sp=SW8&amp;requestCount=1" data-fld="$$GFBO_46" title="">Veranstaltungen</a></li>
+<li class="cssmenu_ul"><a href="#">Service</a>
+<ul class="menufts">
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$5.directlink&amp;sp=S%24%24GFBO_47&amp;sp=SW335&amp;requestCount=1" data-fld="$$GFBO_47" title="">Kontakt</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$6.directlink&amp;sp=S%24%24GFBO_48&amp;sp=SW333&amp;requestCount=1" data-fld="$$GFBO_48" title="">Über uns</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$7.directlink&amp;sp=S%24%24GFBO_49&amp;sp=SW201&amp;requestCount=1" data-fld="$$GFBO_49" title="">Nutzung, Gebühren, Ausleihe</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$8.directlink&amp;sp=S%24%24GFBO_50&amp;sp=SW202&amp;requestCount=1" data-fld="$$GFBO_50" title="">Leseplätze</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$9.directlink&amp;sp=S%24%24GFBO_51&amp;sp=SW203&amp;requestCount=1" data-fld="$$GFBO_51" title="">Newsletter</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$10.directlink&amp;sp=S%24%24GFBO_52&amp;sp=SW204&amp;requestCount=1" data-fld="$$GFBO_52" title="">WLAN</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$11.directlink&amp;sp=S%24%24GFBO_53&amp;sp=SW205&amp;requestCount=1" data-fld="$$GFBO_53" title="">Auskunft und Beratung</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$12.directlink&amp;sp=S%24%24GFBO_54&amp;sp=SW206&amp;requestCount=1" data-fld="$$GFBO_54" title="">Downloads</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$13.directlink&amp;sp=S%24%24GFBO_55&amp;sp=SW207&amp;requestCount=1" data-fld="$$GFBO_55" title="">Barrierefreiheit</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$14.directlink&amp;sp=S%24%24GFBO_56&amp;sp=SW208&amp;requestCount=1" data-fld="$$GFBO_56" title="">Führungen</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$15.directlink&amp;sp=S%24%24GFBO_57&amp;sp=SW209&amp;requestCount=1" data-fld="$$GFBO_57" title="">Für Institutionen</a></li>
+</ul></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$16.directlink&amp;sp=S%24%24GFBO_58&amp;sp=SW7&amp;requestCount=1" data-fld="$$GFBO_58" title="">Kinder</a></li>
+<li class="cssmenu_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$17.directlink&amp;sp=S%24%24GFBO_59&amp;sp=SW9&amp;requestCount=1" data-fld="$$GFBO_59" title="">Jugendliche</a></li>
+<li class="cssmenu_button"><button type="button" name="$ScriptButton" onclick="setHiddenField('$ScriptButton', '$ScriptButton_hidden', 'BK');" rawLabel="true">Mein Konto</button><input type="hidden" name="$ScriptButton_hidden" value=""/></li>
+</ul>
+            </nav>
+          </div>
+        </div>
+        <div id="searchBtn-wrapper">
+          <button id="searchbox-button" aria-controls="search" aria-expanded="false" aria-labelledby="searchbox-button-text" title="Suche" type="button">
+            <span id="searchbox-button-text">Suche</span>
+          </button>
+        </div>
+      </header>
+      <div class="search-wrapper">
+        <div id="search" role="search" aria-label="Schnellsuche"> <div class="grid-wrapper">
+            <div class="grid-row">
+              <div class="grid-col col-12 col-sm-12 col-md-3 col-lg-4 col-xl-6">
+                <div class="grid-inside">
+                  <div class="field-phrase">
+                    <label for="Autosuggest"><span class="fbz-text">Suchbegriff</span></label><input type="text" autocomplete="off" id="Autosuggest" list="listAutosuggest" data-allowReturn="true" placeholder="" name="$Autosuggest" data-fld="THEMA2_1" value="Python Crashkurs" data-clearinput="true"/><datalist id="listAutosuggest" aria-live="polite"></datalist> </div>
+                </div>
+              </div>
+              <div id="R23" class="grid-col col-12 col-sm-12 col-md-9 col-lg-8 col-xl-6">
+  <div class="grid-inside">
+  
+    <div class="field-library">
+      <label for="SUCBER_1"><span class="fbz-text">Suchbereich</span></label><select name="select" id="SUCBER_1" class="fb">
+<option value="Bitte ausw&#228;hlen">Bitte ausw&#228;hlen</option>
+<option value="- Alle -" selected="selected">- Alle -</option>
+<option value="Stadtbibliothek am Mail&#228;nder Platz">Stadtbibliothek am Mail&#228;nder Platz</option>
+<option value="Bad Cannstatt">Bad Cannstatt</option>
+<option value="Botnang">Botnang</option>
+<option value="Degerloch">Degerloch</option>
+<option value="Fahrbibliothek Max">Fahrbibliothek Max</option>
+<option value="Fahrbibliothek Moritz">Fahrbibliothek Moritz</option>
+<option value="Feuerbach">Feuerbach</option>
+<option value="Freiberg">Freiberg</option>
+<option value="Heslach">Heslach</option>
+<option value="Kneippweg">Kneippweg</option>
+<option value="M&#246;hringen">M&#246;hringen</option>
+<option value="M&#252;nster">M&#252;nster</option>
+<option value="Neugereut">Neugereut</option>
+<option value="Ost">Ost</option>
+<option value="Plieningen">Plieningen</option>
+<option value="Pop-up-Bibliothek Hedelfingen">Pop-up-Bibliothek Hedelfingen</option>
+<option value="Pop-up-Bibliothek Obert&#252;rkheim">Pop-up-Bibliothek Obert&#252;rkheim</option>
+<option value="Stammheim">Stammheim</option>
+<option value="Untert&#252;rkheim">Untert&#252;rkheim</option>
+<option value="Vaihingen">Vaihingen</option>
+<option value="Weilimdorf">Weilimdorf</option>
+<option value="West">West</option>
+<option value="Zuffenhausen">Zuffenhausen</option>
+</select> </div>
+        
+      <div class="field-buttons"><input type="submit" name="textButton" value="Suchen" data-fld="$$GFBO_1" class="imp-button suche-starten"/> </div>
+  
+      <div class="field-buttons-adv"><input type="submit" name="textButton$0" value="Erweiterte Suche" data-fld="$$GFBO_7" class="link-button search-adv"/> </div>
+
+  </div>
+</div>
+             </div>
+          </div>
+         </div>
+      </div>
+    </div>
+
+<!-- END Sticky-Wrapper -->
+<div id="container" class="container-wrapper">
+      <div id="container-inside">
+        <main id="main" aria-label="Hauptbereich">
+          <div class="inside"><div id="adis-timeout-counter">
+	<p class="adis-timeout-counter">
+		<span id="adis-timeoutcounter-text">Sitzungsende bei Inaktivit&#228;t: </span>
+        <span id="adis-timeoutcounter-label" class="timeoutcounter-label"></span>
+	</p>	<div id="adis-timeout-alert-modal" class="adis-modal adis-alert-inactive" role="dialog" aria-live="assertive" aria-modal="true" aria-labelledby="adis-timeout-alert-heading" aria-describedby="adis-alert-text">
+			<div id="adis-timeout-alert-modal-wrapper" class="adis-hidden">
+				<h1 id="adis-timeout-alert-heading">Bevorstehendes Sitzungsende!</h1>
+				<p id="adis-alert-text">
+					<span id="intro">Ihre Sitzung wird bei Inaktivit&#228;t beendet um: </span><span id="adis-timeout-modal-endtime"></span>
+					<button id="adis-timeoutcounter-reloader" class="adis-img-button adis-timeout-counter-reloader" type="button">Sitzung verl&#228;ngern	</button>
+				</p>
+			</div>
+		</div>
+</div> <!--REGISTER-->
+
+<!-- START aDISPage Styling -->
+            <div class="aDISPage">
+              <div class="grid-wrapper">
+                <div class="grid-row">
+
+<!-- START: KOPFBEREICH -->
+                  <div class="grid-col col-12 col-sm-12 col-md-9 col-lg-9 col-xl-9">
+                    <div class="grid-inside">
+                       <h1><span class="invisible">Aktuelle Seite: </span>
+                        Trefferliste
+                        </h1>
+                    </div>
+                  </div>
+
+<!-- START Druckbutton -->
+                  <div class="grid-col col-12 col-sm-12 col-md-3 col-lg-3 col-xl-3 adis-printv">
+                    <div class="grid-inside">
+                      <div class="wissen">
+                        <p id="druckversion">
+                       <a href="#" class="drucken-no">Druckversion</a>
+                        <a href="#" class="drucken">Drucken</a>
+                        <a href="#" class="drucken abbrechen">Abbrechen</a>
+                       </p>
+                      </div>
+                    </div>
+                  </div>
+
+<!-- R06=Gesucht wurde mit -->
+                  <div class="grid-col col-12 col-sm-12 col-md-8 col-lg-8 col-xl-9 adis-searched-with">
+                    <div class="grid-inside">
+                      <div id="R06">
+  <p><div class="html_div" style="width:100%; height:100%;"><p class="info">Gesucht wurde mit: "Freie Suche = Python Crashkurs", Treffer: 1-9 von 9</p></div> </p>
+</div>
+                     </div>
+                  </div>
+
+<!-- Toolbar -->
+                   <div class="grid-col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 adis-toolbar-wrapper">
+                    <div class="grid-inside"><div class="toolbar_div">
+<ul class="toolbar_ul">
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000013_00000013.png" alt="zur&#252;ck zur letzten Anzeige" id="Toolbar_0" name="$Toolbar_0" title="zur&#252;ck zur letzten Anzeige" onmouseover="self.status='zur&#252;ck zur letzten Anzeige';return true;" onmouseout="self.status='';" class="toolbar_img"/><label for="Toolbar_0"><span class="toolbar_txt">Zur&#252;ck</span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000014_00000014.png" alt="zum Anfang" id="Toolbar_1" name="$Toolbar_1" disabled="disabled" title="zum Anfang" onmouseover="self.status='zum Anfang';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar_1"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000015_00000015.png" alt="zur&#252;ck" id="Toolbar_2" name="$Toolbar_2" disabled="disabled" title="zur&#252;ck" onmouseover="self.status='zur&#252;ck';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar_2"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000019_00000019.png" alt="n&#228;chster" id="Toolbar_3" name="$Toolbar_3" disabled="disabled" title="n&#228;chster" onmouseover="self.status='n&#228;chster';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar_3"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_0000001A_0000001A.png" alt="zum Ende" id="Toolbar_4" name="$Toolbar_4" disabled="disabled" title="zum Ende" onmouseover="self.status='zum Ende';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar_4"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000018_00000018.png" alt="zur Vollanzeige der Treffer" id="Toolbar_5" name="$Toolbar_5" title="zur Vollanzeige der Treffer" onmouseover="self.status='zur Vollanzeige der Treffer';return true;" onmouseout="self.status='';" class="toolbar_img"/><label for="Toolbar_5"><span class="toolbar_txt">Vollanzeige</span></label></li></ul></div> <a href="#treffer-anchor" class="toolbar_filter"><img src="/aDISWeb_kopac86/img/icons/filter.svg" alt="zum Abschnitt Filtern" title="zum Abschnitt Filtern" class="toolbar_img"></a>
+                    </div>
+                  </div>
+
+<!-- Trennleiste -->
+                  <div class="grid-col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 adis-line">
+                    <div class="grid-inside">
+                      <hr>
+                    </div>
+                  </div>
+
+<!-- START: HAUPTBEREICH-Trefferliste, Vollanzeige -->
+                  <div class="grid-col col-12 col-sm-12 col-md-9 col-lg-9 col-xl-9 arena-standard">
+                    <div class="grid-inside">
+                      <section id="results">
+                         <div id="R07">
+  <div class="resultlist">	<div class="rList_wrapper"><ul class="rList"><li class="rList_li rList_li_even rList_cover_active rList_cover_right" data-ajax="AK02349614"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783527833542/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">1</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-info-blue.svg' alt='siehe Vollanzeige' title='siehe Vollanzeige' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02349614')" >Python Alles-in-einem-Band für Dummies</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2025</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/ebook.svg' alt='E-Book' title='E-Book' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Johannes Hofmeister</strong>. - Wiley</div>		<div style="width: 18%;" class="rList_col rList_sig">&nbsp;</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck" data-fld="###CHK_1" id="cellCheck"/><label for="cellCheck"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_0_12" type="button" aria-controls="lcont_0" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort">&nbsp;</div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_0" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_odd rList_cover_active rList_cover_right" data-ajax="AK02292562"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783367101238/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">2</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-green.svg' alt='Ausleihbar' title='Ausleihbar' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02292562')" >Einstieg in Python : ideal für Programmiereinsteiger</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2024</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/buch.svg' alt='Buch' title='Buch' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Thomas Theis</strong>. - 8., aktualisierte Auflage. - Rheinwerk</div>		<div style="width: 18%;" class="rList_col rList_sig">Wcm 2 Python 3.12</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$0" data-fld="###CHK_2" id="cellCheck_0"/><label for="cellCheck_0"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_1_12" type="button" aria-controls="lcont_1" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort"><button id="lrb_1_13" type="button" aria-controls="lcont_1" value="Standort" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Standort</span></button></div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_1" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_even rList_cover_active rList_cover_right" data-ajax="AK02289057"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783864909894/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">3</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-green.svg' alt='Ausleihbar' title='Ausleihbar' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02289057')" >Python Crashkurs : eine praktische, projektbasierte Programmiereinführung</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2024</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/buch.svg' alt='Buch' title='Buch' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Eric Matthes</strong>. - 3., überarbeitete und aktualisierte Auflage. - dpunkt.verlag</div>		<div style="width: 18%;" class="rList_col rList_sig">Wcm 2 Python 3.11</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$1" data-fld="###CHK_3" id="cellCheck_1"/><label for="cellCheck_1"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_2_12" type="button" aria-controls="lcont_2" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort"><button id="lrb_2_13" type="button" aria-controls="lcont_2" value="Standort" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Standort</span></button></div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_2" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_odd rList_cover_active rList_cover_right" data-ajax="AK02313880"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783836296687/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">4</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-info-blue.svg' alt='siehe Vollanzeige' title='siehe Vollanzeige' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02313880')" >Raspberry Pi : das umfassende Handbuch</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2024</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/ebook.svg' alt='E-Book' title='E-Book' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Michael Kofler </strong>. - Rheinwerk Verlag</div>		<div style="width: 18%;" class="rList_col rList_sig">&nbsp;</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$2" data-fld="###CHK_4" id="cellCheck_2"/><label for="cellCheck_2"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_3_12" type="button" aria-controls="lcont_3" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort">&nbsp;</div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_3" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_even rList_cover_active rList_cover_right" data-ajax="AK02273893"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783836294249/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">5</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-no-red.svg' alt='ist zur Zeit nicht ausleihbar' title='ist zur Zeit nicht ausleihbar' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02273893')" >Scripting : das Praxisbuch für Administratoren und DevOps-Teams</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2023</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/buch.svg' alt='Buch' title='Buch' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Michael Kofler</strong>. - Rheinwerk Computing</div>		<div style="width: 18%;" class="rList_col rList_sig">Wcm Kof</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$3" data-fld="###CHK_5" id="cellCheck_3"/><label for="cellCheck_3"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_4_12" type="button" aria-controls="lcont_4" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort"><button id="lrb_4_13" type="button" aria-controls="lcont_4" value="Standort" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Standort</span></button></div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_4" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_odd rList_cover_active rList_cover_right" data-ajax="AK02129397"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783960091233/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">6</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-green.svg' alt='Ausleihbar' title='Ausleihbar' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02129397')" >Einführung in Data Science : Grundprinzipien der Datenanalyse mit Python</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2020</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/buch.svg' alt='Buch' title='Buch' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Joel Grus </strong>. - 2. Auflage. - O'Reilly</div>		<div style="width: 18%;" class="rList_col rList_sig">Wce Gru</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$4" data-fld="###CHK_6" id="cellCheck_4"/><label for="cellCheck_4"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_5_12" type="button" aria-controls="lcont_5" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort"><button id="lrb_5_13" type="button" aria-controls="lcont_5" value="Standort" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Standort</span></button></div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_5" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_even rList_cover_active rList_cover_right" data-ajax="AK02149607"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783527714148/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">7</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-green.svg' alt='Ausleihbar' title='Ausleihbar' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02149607')" >Python für Dummies</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2020</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/buch.svg' alt='Band' title='Band' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Johannes C. Hofmeister, Horst Schneider</strong>. - Wiley-VCH</div>		<div style="width: 18%;" class="rList_col rList_sig">Wcm 2 Python 3.8</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$5" data-fld="###CHK_7" id="cellCheck_5"/><label for="cellCheck_5"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_6_12" type="button" aria-controls="lcont_6" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort"><button id="lrb_6_13" type="button" aria-controls="lcont_6" value="Standort" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Standort</span></button></div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_6" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_odd rList_cover_active rList_cover_right" data-ajax="AK02056126"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783836265218/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">8</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-info-blue.svg' alt='siehe Vollanzeige' title='siehe Vollanzeige' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK02056126')" >Raspberry Pi : das umfassende Handbuch</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2018</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/ebook.svg' alt='E-Book' title='E-Book' /></div>		<div style="width: 70%;" class="rList_col rList_name"><strong> Michael Kofler, Charly Kühnast, Christoph Scherbeck</strong>. - 5., aktualisierte Auflage. - Rheinwerk Verlag</div>		<div style="width: 18%;" class="rList_col rList_sig">&nbsp;</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$6" data-fld="###CHK_8" id="cellCheck_6"/><label for="cellCheck_6"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_7_12" type="button" aria-controls="lcont_7" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort">&nbsp;</div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_7" class="rList_panel content-inactive"></div></li><li class="rList_li rList_li_even rList_cover_active rList_cover_right" data-ajax="AK00356021"><div class="rList_cover"><div style="" class="rList_col rList_img"><img alt="" title="" src="/aDISWeb/assets/placeholder.gif" data-err="/aDISWeb/assets/placeholder.gif" data-src="https://api.vlb.de/api/v1/cover/9783836237970/s?access_token=63a82a71-a875-4a48-a32d-560e9bc3ef3e" class="img-delayed"/></div>	</div>	<div class="rList_grid_wrapper"><div class="rList_grid"><div style="width: 06%;" class="rList_col rList_num">9</div>		<div style="width: 06%;" class="rList_col rList_availability"><span><img class='icon'  src='/aDISWeb_kopac86/img/icons/availability-info-blue.svg' alt='siehe Vollanzeige' title='siehe Vollanzeige' /></span></div>		<div style="width: 70%;" class="rList_col rList_titel"><a href="javascript:htmlOnLink('AK00356021')" >Raspberry Pi : das umfassende Handbuch</a></div>		<div style="width: 18%;" class="rList_col rList_jahr">2015</div>	</div>	<div class="rList_grid"><div style="width: 12%;" class="rList_col rList_medium"><img class='icon'  src='/aDISWeb_kopac86/img/medien/ebook.svg' alt='E-Book' title='E-Book' /></div>		<div style="width: 70%;" class="rList_col rList_name">Rheinwerk Verlag</div>		<div style="width: 18%;" class="rList_col rList_sig">&nbsp;</div>	</div>	<div class="rList_grid"><div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 06%;" class="rList_col rList_name">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_check"><input type="checkbox" name="cellCheck$7" data-fld="###CHK_9" id="cellCheck_7"/><label for="cellCheck_7"><span class="invisible">Markieren</span></label></div>		<div style="width: 18%;" class="rList_col rList_button but_merken"><button id="lrb_8_12" type="button" aria-controls="lcont_8" value="Merken" class="rbutton button-inactive" onclick="return RButton.evhandler(this)"><span class="rlabel">Merken</span></button></div>		<div style="width: 19%;" class="rList_col rList_button but_standort">&nbsp;</div>		<div style="width: 15%;" class="rList_col rList_button but_werktitel">&nbsp;</div>		<div style="width: 18%;" class="rList_col rList_www">&nbsp;</div>	</div></div>	<div aria-hidden="true" aria-expanded="false" id="lcont_8" class="rList_panel content-inactive"></div></li></ul>	</div> </div>
+</div><div class="toolbar_div">
+<ul class="toolbar_ul">
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000013_00000013.png" alt="zur&#252;ck zur letzten Anzeige" id="Toolbar$0_0" name="$Toolbar$0_0" title="zur&#252;ck zur letzten Anzeige" onmouseover="self.status='zur&#252;ck zur letzten Anzeige';return true;" onmouseout="self.status='';" class="toolbar_img"/><label for="Toolbar$0_0"><span class="toolbar_txt">Zur&#252;ck</span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000014_00000014.png" alt="zum Anfang" id="Toolbar$0_1" name="$Toolbar$0_1" disabled="disabled" title="zum Anfang" onmouseover="self.status='zum Anfang';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar$0_1"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000015_00000015.png" alt="zur&#252;ck" id="Toolbar$0_2" name="$Toolbar$0_2" disabled="disabled" title="zur&#252;ck" onmouseover="self.status='zur&#252;ck';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar$0_2"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000019_00000019.png" alt="n&#228;chster" id="Toolbar$0_3" name="$Toolbar$0_3" disabled="disabled" title="n&#228;chster" onmouseover="self.status='n&#228;chster';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar$0_3"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_0000001A_0000001A.png" alt="zum Ende" id="Toolbar$0_4" name="$Toolbar$0_4" disabled="disabled" title="zum Ende" onmouseover="self.status='zum Ende';return true;" onmouseout="self.status='';" class="toolbar_img_dis"/><label for="Toolbar$0_4"><span class="toolbar_txt_dis"></span></label></li>
+<li class="toolbar_li">
+<input type="image" src="/aDISWeb/images/POOLM02QPRODXYZ@/png/POOLM02QPRODXYZ@_00000018_00000018.png" alt="zur Vollanzeige der Treffer" id="Toolbar$0_5" name="$Toolbar$0_5" title="zur Vollanzeige der Treffer" onmouseover="self.status='zur Vollanzeige der Treffer';return true;" onmouseout="self.status='';" class="toolbar_img"/><label for="Toolbar$0_5"><span class="toolbar_txt">Vollanzeige</span></label></li></ul></div> </section>
+                    </div>
+                  </div>
+
+<!-- START: Rechte Spalte -->
+                  <div class="grid-col col-12 col-sm-12 col-md-3 col-lg-3 col-xl-3 arena-standard arena-trefferliste arena-vollanzeige">
+                    <div class="grid-inside">
+                      <section id="options">
+                        <div class="title-widget">
+                          <h2><i class="icon icon-help" aria-hidden="true"></i> Anleitungen</h2>
+                        </div>
+                        <!--include-Text=HELPTX/HilfeAccordeon,h4-->
+                        <div class="accordion">
+                          <h3><button id="accordion-R1_A-toggler" class="accordion-toggler" type="button" aria-controls="accordion-R1_A-panel" aria-expanded="false">
+                          <i class="accordion-icon" aria-hidden="true"></i>
+                          <span class="accordion-title">So funktionieren &hellip;</span>
+                          </button></h3>
+                          <div id="accordion-R1_A-panel" aria-labelledby="accordion-R1_A-toggler" role="region" class="accordion-panel">
+                            <div class="accordion-inner">
+                              <div id="R44"><div class="html_div" style="width:100%; height:100%;"><div class="accordion">
+<h4>
+<button type="button" id="accordion-R1-toggler" aria-controls="accordion-R1-panel"  aria-expanded="false" class="accordion-toggler">
+<i class="accordion-icon" aria-hidden="true"></i>
+<span class="accordion-title">Meine Suche speichern</span>
+</button></h3>
+<div id="accordion-R1-panel" aria-labelledby="accordion-R1-toggler" role="region" class="accordion-panel"><div class="accordion-inner"><p>Sie müssen angemeldet sein. Sie vergeben einen Titel für Ihre Suchanfrage, die danach gespeichert wird. Ihre gespeicherten Suchanfragen können Sie von Ihrem Konto aus aufrufen.</p></div></div></div><div class="accordion">
+<h4>
+<button type="button" id="accordion-R2-toggler" aria-controls="accordion-R2-panel"  aria-expanded="false" class="accordion-toggler">
+<i class="accordion-icon" aria-hidden="true"></i>
+<span class="accordion-title">Merkliste aktivieren</span>
+</button></h3>
+<div id="accordion-R2-panel" aria-labelledby="accordion-R2-toggler" role="region" class="accordion-panel"><div class="accordion-inner"><p>Durch Anklicken einer Merkliste wird diese an die erste Position platziert und wird zur <strong>aktiven Merkliste</strong>. Ist das Stern-Icon gefüllt, führt der Klick auf diese <strong>aktive Merkliste</strong> zur Anzeige der Merkliste.</p></div></div></div><div class="accordion">
+<h4>
+<button type="button" id="accordion-R3-toggler" aria-controls="accordion-R3-panel"  aria-expanded="false" class="accordion-toggler">
+<i class="accordion-icon" aria-hidden="true"></i>
+<span class="accordion-title">Trefferliste filtern</span>
+</button></h3>
+<div id="accordion-R3-panel" aria-labelledby="accordion-R3-toggler" role="region" class="accordion-panel"><div class="accordion-inner"><p>Klicken Sie einen Filter an, um dessen Werte anzuzeigen.<br/> Sie können Ihre Trefferliste einschränken, indem Sie einen oder mehrere dieser Werte von einem oder mehrere(n) Filtern auswählen und auf die Schaltfläche "Filter" klicken. Sie können Ihre eingeschränkte Trefferliste wieder erweitern, indem Sie die Häkchen der Werte unter der Rubrik "Aktive Filter" wieder entfernen und die Schaltfläche "Filter" auslösen.</p></div></div></div><div class="accordion">
+<h4>
+<button type="button" id="accordion-R4-toggler" aria-controls="accordion-R4-panel"  aria-expanded="false" class="accordion-toggler">
+<i class="accordion-icon" aria-hidden="true"></i>
+<span class="accordion-title">Titel sortieren</span>
+</button></h3>
+<div id="accordion-R4-panel" aria-labelledby="accordion-R4-toggler" role="region" class="accordion-panel"><div class="accordion-inner"><p>Die Vorsortierung ist nach Titel/Jahr eingestellt. Wenn Sie eine neue Sortierung wünschen, dann hängt dies von der zu sortierenden Treffermenge ab. Bei großen Treffermengen ist die Sortierung nicht möglich.</p></div></div></div><div class="accordion">
+<h4>
+<button type="button" id="accordion-R5-toggler" aria-controls="accordion-R5-panel"  aria-expanded="false" class="accordion-toggler">
+<i class="accordion-icon" aria-hidden="true"></i>
+<span class="accordion-title">Titel exportieren</span>
+</button></h3>
+<div id="accordion-R5-panel" aria-labelledby="accordion-R5-toggler" role="region" class="accordion-panel"><div class="accordion-inner"><p>Sie können bis zu 300 Titel als Textdatei exportieren. Aufgrund der Größe dieser Datei bitten wir Sie um etwas Geduld, bis der Download zur Verfügung steht.</p></div></div></div></div>
+</div>
+                            </div>
+                          </div>
+                        </div>
+                         <div class="title-widget">
+                          <h2><i class="icon icon-help" aria-hidden="true"></i> Suchanfrage sichern</h2>
+                        </div>
+                        <div id="R04">
+  <p><input type="submit" name="textButton$1" value="Meine Suche speichern" data-fld="$$GFBO_6" class="imp-button speichern"/> </p>
+</div>
+                           <div class="title-widget">
+                           <h2><i class="icon icon-merkliste icon-merkliste-aktivieren" aria-hidden="true"></i> Merkliste aktivieren</h2>
+                         </div>
+                         <ul class="cssmenu_ul" id="Mainmenu">
+<li class="cssmenu_ul"><a href="#"> </a>
+<ul class="menufts">
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$18.directlink&amp;sp=S%24%24GFBO_41&amp;sp=SML01&amp;requestCount=1" data-fld="$$GFBO_41" title="" data-ajax="$MLFLD_1"><span class="merkzettel status-inactive">Merkliste</span></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$19.directlink&amp;sp=S%24%24GFBO_42&amp;sp=SML02&amp;requestCount=1" data-fld="$$GFBO_42" title="" data-ajax="$MLFLD_2"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$20.directlink&amp;sp=S%24%24GFBO_43&amp;sp=SML03&amp;requestCount=1" data-fld="$$GFBO_43" title="" data-ajax="$MLFLD_3"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$21.directlink&amp;sp=S%24%24GFBO_44&amp;sp=SML04&amp;requestCount=1" data-fld="$$GFBO_44" title="" data-ajax="$MLFLD_4"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$22.directlink&amp;sp=S%24%24GFBO_45&amp;sp=SML05&amp;requestCount=1" data-fld="$$GFBO_45" title="" data-ajax="$MLFLD_5"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$23.directlink&amp;sp=S%24%24GFBO_46&amp;sp=SML06&amp;requestCount=1" data-fld="$$GFBO_46" title="" data-ajax="$MLFLD_6"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$24.directlink&amp;sp=S%24%24GFBO_47&amp;sp=SML07&amp;requestCount=1" data-fld="$$GFBO_47" title="" data-ajax="$MLFLD_7"></a></li>
+<li class="var_button"><a href="/aDISWeb/app;jsessionid=0123456789ABCDEF0123456789ABCDEF?service=direct/1/POOLM02QPRODXYZ@_00000012_00000012/$InternalLink$25.directlink&amp;sp=S%24%24GFBO_48&amp;sp=SML08&amp;requestCount=1" data-fld="$$GFBO_48" title="" data-ajax="$MLFLD_8"></a></li>
+</ul></li>
+</ul>
+                         <div class="title-widget">
+                            <h2 id="treffer-anchor"><i class="icon icon-filter" aria-hidden="true"></i> Treffer filtern</h2>
+                          </div>
+                        <div class="filter-widget">
+                          <div id="R19">
+  <p class="widget-submit block"><input type="submit" name="textButton$2" value="Filtern" data-fld="$$GFBO_11" class="imp-button filter"/> </p>
+</div><div class="cbtree_div">
+<ul class="cbtree_ul">
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_0" name="SEL1_tree_1_0" id="but-SEL1_tree_1_0" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Bibliothek<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_1" name="SEL1_tree_1_1" id="but-SEL1_tree_1_1" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Jahr<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_2" name="SEL1_tree_1_2" id="but-SEL1_tree_1_2" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Medienart<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_3" name="SEL1_tree_1_3" id="but-SEL1_tree_1_3" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Notation<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_4" name="SEL1_tree_1_4" id="but-SEL1_tree_1_4" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Sprache<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_5" name="SEL1_tree_1_5" id="but-SEL1_tree_1_5" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Art/Inhalt<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+<li class="cbtree_branch_li">
+<button type="submit" aria-controls="sub-SEL1_tree_1_6" name="SEL1_tree_1_6" id="but-SEL1_tree_1_6" class="cbtree_branch_a inactive" aria-selected="false" aria-expanded="false"><i aria-hidden="true" class="icon-type"></i>Zielgruppe<i aria-hidden="true" class="icon-collapsible"></i></button></li>
+</ul></div>
+ </div>
+                        <div id="R09">
+  <p class="widget-submit block"><input type="submit" name="textButton$3" value="Filtern" data-fld="$$GFBO_12" class="imp-button filter"/> </p>
+</div>
+                        <div class="title-widget">
+                          <h2><i class="icon icon-other-options" aria-hidden="true"></i> Weitere Optionen</h2>
+                        </div>
+                        <div id="R05">
+  <div class="accordion">
+    <h3>
+      <button type="button" id="accordion-R05-toggler" aria-controls="accordion-R05-panel" aria-expanded="true" class="accordion-toggler">
+        <i class="accordion-icon icon-sort" aria-hidden="true"></i>
+        <span class="accordion-title">Sortierung &auml;ndern</span>
+      </button>
+    </h3>
+    <div id="accordion-R05-panel" aria-labelledby="accordion-R05-toggler" role="region" class="accordion-panel">
+      <div class="accordion-inner">
+
+        <p><input type="submit" name="textButton$4" value="Relevanz" data-fld="$$GFBO_13" class="buttong sort-relevanz"/><input type="submit" name="textButton$5" value="Titel" data-fld="$$GFBO_8" class="buttong sort-titel"/><input type="submit" name="textButton$6" value="Verfasser" data-fld="$$GFBO_2" class="buttong sort-verfasser"/><input type="submit" name="textButton$7" value="Jahr abw&#228;rts" data-fld="$$GFBO_3" class="buttong sort-jahr-ab"/><input type="submit" name="textButton$8" value="Jahr aufw&#228;rts" data-fld="$$GFBO_4" class="buttong sort-jahr-auf"/> </p>
+
+      </div>
+    </div>
+  </div>
+</div>
+                         <div id="R11">
+  <div class="accordion">
+    <h3>
+      <button type="button" id="accordion-R11-toggler" aria-controls="accordion-R11-panel" aria-expanded="true" class="accordion-toggler">
+        <i class="accordion-icon icon-export" aria-hidden="true"></i>
+        <span class="accordion-title">Titel exportieren</span>
+      </button>
+    </h3>
+    <div id="accordion-R11-panel" aria-labelledby="accordion-R11-toggler" role="region" class="accordion-panel">
+      <div class="accordion-inner"><p class="buttong"><input type="submit" name="textButton$9" value="EndNote" class="buttong"/></p> </div>
+  </div>
+
+  </div>
+</div>
+                        </section>
+                    </div>
+                  </div>
+
+<!-- ENDE: Rechte Spalte -->
+                  <div class="grid-col col-12 col-sm-12 col-md-12 col-lg-12 col-xl-12 arena-all">
+                   </div>
+                </div>
+              </div>
+
+<!-- STOP GRID SYSTEM  -->
+             </div>
+<!-- STOP aDISPage Styling -->
+            <!--REGISTERENDE-->
+          </div>
+        </main>
+       </div>
+    </div>
+
+<!-- STOP Container -->
+    <footer id="footer">
+      <div class="inside">
+         <div class="grid-wrapper">
+          <div class="grid-row">
+            <div class="grid-col col-12 col-md-6 col-lg-6 col-xl-6">
+              <nav id="legal" class="mod_navigation block" aria-label="Rechtliche Links">
+                <ul>
+                  <li><a href="https://stadtbibliothek-stuttgart.de/content/info/impressum.html" target="_blank" rel="noopener" aria-label="Impressum (neues Browser-Fenster)">Impressum</a></li>
+                  <li><a href="https://stadtbibliothek-stuttgart.de/content/info/datenschutz.html" target="_blank" rel="noopener" aria-label="Datenschutz (neues Browser-Fenster)">Datenschutz</a></li>
+                  <li><a href="https://stadtbibliothek-stuttgart.de/content/info/gebuehren.html" target="_blank" rel="noopener" aria-label="Benutzungs- und Geb&uuml;hrenverordnung (neues Browser-Fenster)">Benutzungs- und Geb&uuml;hrenordnung</a></li>
+
+<!-- <li><a href="https://[ Bitte eintragen ]" target="_blank" rel="noopener" aria-label="Hinweis zur Barrierefreiheit (neues Browser-Fenster)">Barrierefreiheit</a></li> -->
+                </ul>
+              </nav>
+            </div>
+             <div class="grid-col col-12 col-md-6 col-lg-6 col-xl-6">
+              <p id="goingup" class="block">
+                <a href="#wrapper">Seitenanfang</a>
+              </p>
+            </div>
+             <div class="grid-col col-12 col-md-6 col-lg-4 col-xl-4">
+              <nav id="social" class="mod_navigation block" aria-label="Die Bibliothek in den soziale Medien">
+                <ul>
+                  <li class="nav-facebook"><a href="https://www.facebook.com/Stadtbibliothek.Stuttgart" target="_blank" rel="noopener" aria-label="Die Bibliothek auf facebook (neues Browser-Fenster)"><img src="/aDISWeb_stu/images/icons/facebook.svg" width="26" height="26" alt="facebook" title="facebook"></a></li>
+                  <li class="nav-youtube"><a href="https://www.youtube.com/c/StadtbibliothekStuttgartYT" target="_blank" rel="noopener" aria-label="Die Bibliothek auf YouTube (neues Browser-Fenster)"><img src="/aDISWeb_stu/images/icons/youtube.svg" width="26" height="26" alt="YouTube" title="YouTube"></a></li>
+                  <li class="nav-instagram"><a href="https://www.instagram.com/stadtbibliothekstuttgart/" target="_blank" rel="noopener" aria-label="Die Bibliothek auf Instagram(neues Browser-Fenster)"><img src="/aDISWeb_stu/images/icons/instagram.svg" width="26" height="26" alt="Instagram" title="Instagram"></a></li>
+                  <li class="nav-mastodon"><a href="https://xn--baw-joa.social/@stadtbibliothekstuttgart" target="_blank" rel="noopener" aria-label="Die Bibliothek auf Mastodon (neues Browser-Fenster)"><img src="/aDISWeb_stu/images/icons/mastodon.svg" width="26" height="26" alt="Mastodon" title="Mastodon"></a></li>
+                </ul>
+              </nav>
+            </div>
+             <div class="grid-col col-12 col-md-6 col-lg-4 col-xl-4">
+              <p id="roessle">
+                <a href="https://www.stuttgart.de" target="_blank" rel="noopener"><img src="/aDISWeb_stu/images/roessle.svg" width="135" height="35" alt="Stuttgart.de" title="Stuttgart.de"></a>
+              </p>
+            </div>
+             <div class="grid-col col-12 col-md-12 col-lg-4 col-xl-4">
+              <p id="credits">
+                <a href="https://www.astec.de" target="_blank" rel="noopener" aria-label="Barrierefreie Bibliotheksoftware der astec eG (neues Browser-Fenster)">Barrierefreie Bibliothekssoftware der |a|S|tec| eG</a>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="clear"></div>
+      </div>
+    </footer>
+  </div>
+</div>
+<script src="/aDISWeb_kopac86/js/scripts-main.js"></script></form>
+</div></body>
+</html>

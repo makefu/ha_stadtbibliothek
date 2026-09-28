@@ -585,21 +585,6 @@ async def test_remseck_supports_details() -> None:
     assert RemseckBackend.supports_details is True
 
 
-async def test_stuttgart_fetch_details_is_a_no_op() -> None:
-    """aDIS detail pages need a separate session-bound flow; the default
-    implementation must leave the loan untouched rather than pretend."""
-    from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
-
-    loan = LoanItem(title="Test", item_id="1", due_date=date.today(), detail_url="https://example.invalid/x")
-    backend = StuttgartBackend()
-    try:
-        assert await backend.fetch_details(loan) is loan
-    finally:
-        await backend.close()
-
-    assert StuttgartBackend.supports_details is False
-
-
 @respx.mock
 async def test_the_checkouts_page_needs_no_useraccount_wrapper(checkouts_html: str) -> None:
     """A current Koha wraps only some tabs in #useraccount -- the fees page

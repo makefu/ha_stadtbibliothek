@@ -260,6 +260,47 @@ async def record_stuttgart(recorder: Recorder, username: str, password: str) -> 
     resp.raise_for_status()
     recorder.add("stuttgart_ausleihen", resp.text)
 
+    # The cover route: fetch_details() searches the catalogue for each loan
+    # title and reads the jacket off the result row or the single-hit
+    # Vollanzeige. The unit tests key their search router on the *constructed*
+    # fixture's titles (fixtures/stuttgart_ausleihen.html, one directory up),
+    # not on whatever happens to be out on the live account today, so those
+    # are the queries recorded here. The last one is a title the OPAC answers
+    # with a single Vollanzeige, keeping a real example of the detail-page
+    # cover route.
+    constructed = OUT.parent / "stuttgart_ausleihen.html"
+    # Parse it through the real backend over a transport that just hands the
+    # page back, so the queries stay the ones the tests route on.
+    stub = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=constructed.read_text()))
+    )
+    probe = StuttgartBackend(stub, base_url=backend.base_url)
+    probe._ausleihen_url = f"{backend.base_url}/aDISWeb/app"
+    queries = [loan.title for loan in await probe.get_loans()] + ["Der Koboldmaki und der große Sturm"]
+    await probe.close()
+    for index, query in enumerate(queries):
+        mask = await client.get(f"{backend.base_url}{backend.START_PATH}")
+        mask.raise_for_status()
+        sform = backend._find_search_form(BeautifulSoup(mask.text, features="html.parser"))
+        if sform is None:
+            raise SystemExit("No search form on the aDIS start page")
+        sdata = backend._extract_hidden_inputs(sform)
+        sdata["$Autosuggest"] = query
+        sdata["SRCHAW"] = "Katalog"
+        sdata["textButton"] = "Suchen"
+        sdata.pop("textButton$0", None)
+        resp = await client.post(
+            f"{backend.base_url}{sform.attrs['action']}",
+            data=sdata,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        kind = (
+            "Vollanzeige" if "show-full-basics" in resp.text else ("Trefferliste" if "rList_li" in resp.text else "?")
+        )
+        recorder.add(f"stuttgart_search_{index:02d}", resp.text)
+        print(f"    [{index}] {query[:40]:40} {kind}")
+
     await backend.close()
 
     names = _adis_patron_names(recorder.pages["stuttgart_account"])

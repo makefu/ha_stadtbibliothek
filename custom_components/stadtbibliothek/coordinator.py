@@ -43,6 +43,15 @@ class StadtbibliothekCoordinator(DataUpdateCoordinator[AccountInfo]):
         try:
             await backend.login(self._username, self._password)
             loans = await backend.get_loans()
+            if backend.supports_details:
+                # One extra request per loan (covers, ISBNs). A single lookup
+                # that fails or times out must not fail the refresh: keep the
+                # loan without its enrichment and carry on.
+                for loan in loans:
+                    try:
+                        await backend.fetch_details(loan)
+                    except Exception:
+                        _LOGGER.debug("detail lookup failed for %s", loan.item_id, exc_info=True)
             fees = await backend.get_fees()
             total_fees = sum(f.amount for f in fees)
             return AccountInfo(

@@ -1,12 +1,13 @@
 """Stuttgart aDIS/BMS library backend."""
 
 import re
+import unicodedata
 from datetime import datetime
 from html import unescape
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup, Tag
-
 from .base import AuthenticationError, FeeItem, LibraryBackend, LibraryType, LoanItem, ParseError, RenewalError
 
 # Fields that indicate media type prefixes in title column
@@ -25,6 +26,18 @@ class StuttgartBackend(LibraryBackend):
     #: absence means we were sent somewhere else entirely -- typically back to
     #: the search mask after the session timed out.
     RESULTS_MARKER = "table.rTable_table"
+
+    #: Catalogue covers are not on the loan listing at all: aDIS keeps them on
+    #: the search-result page (``div.rList_img img``) and on the single-hit
+    #: detail page (``div.show-full-basics img``), and serves the image itself
+    #: from the Deutsche Nationalbibliothek's cover API, keyed by the record's
+    #: ISBN with the OPAC's own client token baked into the URL.
+    COVER_API_MARKER = "api.vlb.de"
+    #: aDIS writes this into ``src`` and puts the real cover in ``data-src``,
+    #: loaded lazily by its JS. Treat it as "no cover".
+    PLACEHOLDER_MARKER = "placeholder"
+
+    supports_details = True
 
     CLIENT_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"}
 
@@ -174,6 +187,121 @@ class StuttgartBackend(LibraryBackend):
 
         return loans
 
+    async def fetch_details(self, loan: LoanItem) -> LoanItem:
+        """Fill in a cover by looking the title up in the catalogue.
+
+        The loan listing is plain text. The only route to a cover is the
+        search the OPAC itself offers: query the loan's title and read the
+        cover off the result row, or off the detail page when the search
+        resolves to a single record. It costs a request per loan, which is why
+        it lives here and not in get_loans().
+
+        A lookup that fails -- no hit, no image, a network error -- leaves
+        cover_url None. A title the catalogue has no image for must not fail
+        the whole refresh.
+        """
+        try:
+            cover = await self._search_cover(loan.title)
+            if cover is None:
+                # Retry once on a looser key: the OPAC token can expire
+                # between two calls, and a decorated title (subtitle,
+                # bracketed junk) deserves one second chance.
+                cover = await self._search_cover(self._bare_title(loan.title))
+        except httpx.HTTPError:
+            return loan
+        if cover:
+            loan.cover_url = cover
+        return loan
+
+    async def _search_cover(self, query: str) -> str | None:
+        """Run one catalogue query and return the cover of its best match."""
+        # A fresh search mask per query. aDIS keeps the previous result set in
+        # the session: reusing one mask for several queries hands back the
+        # earlier query's results, unchanged, as often as not.
+        mask = await self._client.get(f"{self.base_url}{self.START_PATH}")
+        mask.raise_for_status()
+        form = self._find_search_form(BeautifulSoup(mask.text, features="html.parser"))
+        if form is None:
+            return None
+
+        data = self._extract_hidden_inputs(form)
+        data["$Autosuggest"] = query
+        # A radio group with nothing checked posts nothing; "Katalog" is the
+        # difference between cover-carrying hits and "Treffer in Infoseiten".
+        data["SRCHAW"] = "Katalog"
+        data["textButton"] = "Suchen"
+        data.pop("textButton$0", None)
+
+        action = form.attrs["action"]
+        resp = await self._client.post(
+            urljoin(f"{self.base_url}/", str(action)),
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, features="html.parser")
+
+        cover = self._best_match_cover(soup, query)
+        if cover is not None:
+            return cover
+        # The search jumps straight to Vollanzeige when it finds exactly one
+        # record -- how most loans come back, given the barcode printed on the
+        # listing. Its cover sits in the "Weitere Infos" block.
+        return self._detail_page_cover(soup, query)
+
+    def _find_search_form(self, soup: BeautifulSoup) -> Tag | None:
+        """The first form carrying the free-text search field."""
+        for form in soup.find_all("form"):
+            if form.find("input", {"name": "$Autosuggest"}) is not None:
+                return form
+        return None
+
+    def _best_match_cover(self, soup: BeautifulSoup, query: str) -> str | None:
+        """The cover of the result row whose title is the query's title."""
+        want = self._norm_title(query)
+        if not want:
+            return None
+        for item in soup.select("li.rList_li"):
+            link = item.select_one("div.rList_titel a")
+            if link is None:
+                continue
+            have = self._norm_title(link.get_text())
+            if have and (have == want or have.startswith(want) or want.startswith(have)):
+                return self._cover_from_img(item.select_one("div.rList_img img"))
+        return None
+
+    def _detail_page_cover(self, soup: BeautifulSoup, query: str) -> str | None:
+        """The cover on a single-hit Vollanzeige (no result rows are rendered).
+
+        On a result list the row scan above has already had its say: grabbing
+        a cover from an unmatched page here would illustrate this loan with
+        some other hit's jacket.
+        """
+        if soup.select_one("li.rList_li") is not None:
+            return None
+        # Detail pages echo the query ("Gesucht wurde mit: ..."). If the page
+        # the session served is not about this query, it is somebody else's
+        # record and its cover is the wrong image.
+        want = self._norm_title(query)
+        info = soup.select_one("p.info")
+        if want and info is not None and want not in self._norm_title(info.get_text()):
+            return None
+        for img in soup.find_all("img"):
+            cover = self._cover_from_img(img)
+            if cover:
+                return cover
+        return None
+
+    def _cover_from_img(self, img: Tag | None) -> str | None:
+        if img is None:
+            return None
+        # Lazily-loaded covers sit in data-src; src holds the placeholder.
+        raw = img.get("data-src") or img.get("src")
+        url = raw if isinstance(raw, str) else ""
+        if self.COVER_API_MARKER not in url or self.PLACEHOLDER_MARKER in url:
+            return None
+        return urljoin(f"{self.base_url}/", url)
+
     async def get_fees(self) -> list[FeeItem]:
         # aDIS exposes fees behind a separate flow that is not implemented;
         # supports_fees advertises that so callers do not read this as "no fees".
@@ -309,3 +437,27 @@ class StuttgartBackend(LibraryBackend):
             if text:
                 parts.append(text)
         return parts
+
+    @staticmethod
+    def _bare_title(title: str) -> str:
+        """Title without subtitle or media-type bracket, for a second search."""
+        title = re.split(r"\s+:\s+", title)[0]
+        return re.sub(r"\[.+?\]", "", title).strip()
+
+    #: Word characters only; everything else -- spacing, punctuation, media
+    #: brackets -- is noise that differs between the two pages.
+    _TITLE_WORD = re.compile(r"[a-z0-9]+")
+
+    @classmethod
+    def _norm_title(cls, text: str) -> str:
+        """Join-key form of a title, for comparing a loan against a result.
+
+        The listing decorates titles with non-filing marks ("¬Der¬") and
+        shelf noise; the result page prefixes them with media brackets
+        ("[CD] ...") and has its own spacing, and may spell "ss" where the
+        listing has "ß". Compare letters and digits, with ß folded into ss,
+        and nothing else.
+        """
+        folded = unicodedata.normalize("NFKC", text.replace("¬", " ")).lower()
+        folded = re.sub(r"\[[^\]]*\]", " ", folded)
+        return " ".join(cls._TITLE_WORD.findall(folded.replace("ß", "ss")))

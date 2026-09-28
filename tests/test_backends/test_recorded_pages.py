@@ -406,6 +406,12 @@ async def test_the_credentials_form_takes_the_fields_login_fills_in() -> None:
         "stuttgart_login_form.html",
         "stuttgart_account.html",
         "stuttgart_ausleihen.html",
+        "stuttgart_search_00.html",
+        "stuttgart_search_01.html",
+        "stuttgart_search_02.html",
+        "stuttgart_search_03.html",
+        "stuttgart_search_04.html",
+        "stuttgart_search_05.html",
     ],
 )
 def test_no_recording_carries_a_live_session_or_a_patron(name: str) -> None:
@@ -419,3 +425,49 @@ def test_no_recording_carries_a_live_session_or_a_patron(name: str) -> None:
     assert "11001558" not in html, "the real Koha borrowernumber is still in this fixture"
     for match in re.findall(r"Abholcode:\s*(\S+)", html):
         assert match == "Mu1234"
+
+
+# --- Stuttgart: the cover route (search pages) ---------------------------
+
+
+def test_the_loan_listing_itself_carries_no_cover(ausleihen: str) -> None:
+    """Why fetch_details exists: the aDIS loan table is plain text. Every img
+    on the listing is chrome (logo, social icons), never a jacket -- so a
+    cover has to be fetched per loan, and nothing in get_loans() can supply
+    one."""
+    soup = BeautifulSoup(ausleihen, features="html.parser")
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or "")
+        assert "api.vlb.de" not in src, "a jacket appeared on the listing; re-read get_loans()"
+
+
+def test_a_result_row_keeps_its_jacket_in_a_lazy_data_src() -> None:
+    """The rows aDIS returns for a catalogue search carry the cover in
+    ``data-src`` (its JS swaps it into ``src`` later); the ``src`` is a
+    placeholder gif. Reading ``src`` alone finds nothing."""
+    soup = BeautifulSoup(_recorded("stuttgart_search_03.html"), features="html.parser")
+    row = next(
+        item
+        for item in soup.select("li.rList_li")
+        if "Python Crashkurs" in str(item.select_one("div.rList_titel a").get_text())
+    )
+    img = row.select_one("div.rList_img img")
+    assert "placeholder" in str(img["src"])
+    assert str(img["data-src"]).startswith("https://api.vlb.de/api/v1/cover/")
+    # the token is baked into the URL by the OPAC; dropping it answers 401
+    assert "access_token=" in str(img["data-src"])
+
+
+def test_a_single_hit_answers_with_a_vollanzeige_not_a_result_list() -> None:
+    """An exact-enough query skips the list: no ``li.rList_li`` at all, the
+    record rendered inline. Its cover sits outside ``div.rList_img``, and
+    ``p.info`` echoes the query -- the only clue that a served page belongs
+    to this search and not to the session's previous one."""
+    html = _recorded("stuttgart_search_05.html")
+    soup = BeautifulSoup(html, features="html.parser")
+    assert soup.select("li.rList_li") == []
+    assert "show-full-basics" in html
+    info = soup.select_one("p.info")
+    assert info is not None and "Koboldmaki" in info.get_text()
+    jackets = [img for img in soup.find_all("img") if "api.vlb.de" in str(img.get("src") or "")]
+    assert jackets, "the single-hit page carries no cover to read"
