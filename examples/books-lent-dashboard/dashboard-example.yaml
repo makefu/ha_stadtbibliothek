@@ -1,0 +1,23 @@
+# Storage-mode Lovelace dashboard definition for the "books overview" example.
+# Create the dashboard in the HA UI (or via the REST/WebSocket config API) with
+# url_path "buecher-uebersicht", then paste this as its JSON/YAML content — or
+# use it as the `config` payload when creating it programmatically.
+#
+# The card itself is registered as a separate lovelace resource:
+#   url: /local/books-lent-card.js?v=<stamp>   type: module
+# (the ?v= matters: HA serves /local/ with Cache-Control: max-age=2678400, so
+# content changes only reach browsers when the URL changes.)
+
+views:
+  - title: Ausleihen
+    path: ausleihen
+    type: panel
+    panel: true
+    cards:
+      - type: custom:books-lent-card
+        entities:
+          # Any number of stadtbibliothek *loans* sensors; the card reads
+          # attributes.loans of each and derives the library filter chips
+          # from the `library` field in the data.
+          - sensor.stadtbibliothek_remseck_liam_loans
+          - sensor.stadtbibliothek_stuttgart_liam_loans

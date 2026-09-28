@@ -62,6 +62,17 @@ Each configured account creates three sensors:
 - **Attributes:**
   - `fee_items` -- list of individual fee entries
 
+
+## Dashboard example
+
+[`examples/books-lent-dashboard/`](examples/books-lent-dashboard/) ships a
+ready-made Lovelace setup: a full-width panel dashboard with a small custom
+card (`books-lent-card.js`) that turns the `loans` attributes of all accounts
+into one color-coded table — cover images, due dates, remaining renewals,
+latest-possible return date (`due + 30 days × renewals_left`) — sorted so the
+books due soonest are on top, with per-library filter chips for collecting a
+batch. See its README for the two-line install.
+
 ## Services
 
 ### `stadtbibliothek.renew_loan`

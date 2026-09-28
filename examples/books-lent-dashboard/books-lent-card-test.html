@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --divider-color:#e0e0e0; --primary-text-color:#212121; --primary-color:#03a9f4; --card-background-color:#fff; }
+  body { font-family: Roboto, sans-serif; background:#fafafa; margin:0; padding:16px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+  const s = document.createElement('script');
+  s.src = '/local/books-lent-card.js?v=' + Date.now();
+  document.head.appendChild(s);
+</script>
+<script>
+const TOKEN = decodeURIComponent(location.hash.slice(1));
+customElements.whenDefined('books-lent-card').then(async () => {
+  const card = document.createElement("books-lent-card");
+  card.setConfig({ type: "custom:books-lent-card", entities: ["sensor.stadtbibliothek_remseck_liam_loans", "sensor.stadtbibliothek_stuttgart_liam_loans"] });
+  document.getElementById("app").appendChild(card);
+  const states = {};
+  for (const e of ["sensor.stadtbibliothek_remseck_liam_loans", "sensor.stadtbibliothek_stuttgart_liam_loans"]) {
+    states[e] = await (await fetch("/api/states/" + e, { headers: { Authorization: "Bearer " + TOKEN } })).json();
+  }
+  card.hass = { states };
+});
+</script>
+</body>
+</html>
