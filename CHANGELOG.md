@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.1
+
+- Packaging: `pyproject.toml` carries the released version. The flake derives
+  the derivation version from `manifest.json`, so every build from v1.4.0
+  failed `pythonMetadataCheckPhase` (derivation 1.4.0 vs metadata 1.3.0),
+  which blocked any consumer building the library from a tag. No runtime
+  change.
+
 ## v1.4.0
 
 ### Covers for lent books
