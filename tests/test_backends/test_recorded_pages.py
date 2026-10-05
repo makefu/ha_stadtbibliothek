@@ -12,6 +12,7 @@ Every assertion here corresponds to a fix that was made blind against a
 trimmed fixture and then found to be wrong against the real server.
 """
 
+import re
 from datetime import date
 from pathlib import Path
 
@@ -31,7 +32,7 @@ STUTTGART_URL = "https://stadtbibliothek-stuttgart.de"
 
 #: The day the pages in fixtures/recorded/ were captured. Renewal eligibility
 #: is a comparison against today, so it only means anything frozen here.
-RECORDED_ON = "2026-08-31"
+RECORDED_ON = "2026-10-05"
 
 
 def _recorded(name: str) -> str:
@@ -149,23 +150,25 @@ async def test_the_borrowernumber_comes_off_the_renewal_form(checkouts: str) -> 
 
 @freeze_time(RECORDED_ON)
 async def test_a_future_no_renewal_before_blocks_renewal(checkouts: str) -> None:
-    """Every recorded loan sat inside its "Keine Verlängerung vor" window.
-    Reporting them renewable would have the coordinator POST renewals the
-    server is certain to reject."""
+    """Three of the recorded loans sit inside their "Keine Verlängerung vor"
+    window. Reporting them renewable would have the coordinator POST renewals
+    the server is certain to reject -- while the rows outside the window must
+    stay renewable, or the block silently becomes a blanket."""
     loans = await _remseck_loans(checkouts)
     assert "no-renewal-before" in checkouts
-    assert not any(loan.can_be_renewed for loan in loans)
+    assert any(not loan.can_be_renewed for loan in loans)
+    assert any(loan.can_be_renewed for loan in loans), "nothing is renewable at all; the block over-fires"
+    assert sum(not loan.can_be_renewed for loan in loans) == checkouts.count("no-renewal-before")
 
 
 async def test_remaining_renewals_are_read_as_renewals_already_used(checkouts: str) -> None:
-    """Koha counts down -- "( 0 von 3 Verlängerungen verbleiben )" means three
+    """Koha counts down -- "( 2 von 3 Verlängerungen verbleiben )" means two
     used, not none. Reading it forwards inverted every count."""
     loans = await _remseck_loans(checkouts)
     assert "Verlängerungen verbleiben" in checkouts
     assert all(loan.max_renewals == 3 for loan in loans)
-    exhausted = [loan for loan in loans if loan.renewals_left == 0]
-    assert exhausted, "expected at least one loan with its renewals used up"
-    assert all(loan.times_renewed == 3 for loan in exhausted)
+    assert any(loan.times_renewed == 2 and loan.renewals_left == 1 for loan in loans)
+    assert any(loan.times_renewed == 1 and loan.renewals_left == 2 for loan in loans)
 
 
 async def test_a_subtitle_is_separated_from_the_title(checkouts: str) -> None:
@@ -202,16 +205,21 @@ async def test_every_row_links_its_catalogue_record(checkouts: str) -> None:
     assert all(loan.detail_url.startswith(f"{REMSECK_URL}/cgi-bin/koha/opac-detail.pl") for loan in loans)
 
 
-async def test_item_id_falls_back_to_the_biblionumber_without_a_renew_control(checkouts: str) -> None:
+async def test_renewable_rows_carry_their_itemnumber_as_item_id(checkouts: str) -> None:
     """Koha renders the renew checkbox only for a loan it would accept a
-    renewal for. On the recorded page nothing was renewable, so no row has
-    one, and item_id is a biblionumber throughout -- which renew_loan() cannot
-    use. Recorded so that the day the fallback starts mattering is a test
-    failure rather than a silent renewal that never happens."""
-    assert 'name="item"' not in checkouts
+    renewal for, and its value is the itemnumber -- not the biblionumber --
+    which is the only number opac-renew.pl takes. A row without the control
+    falls back to the biblionumber, which renew_loan() cannot use."""
+    assert 'name="item"' in checkouts
     loans = await _remseck_loans(checkouts)
-    assert all(loan.item_id.isdigit() for loan in loans)
-    assert all(f"biblionumber={loan.item_id}" in loan.detail_url for loan in loans)
+    renewable = [loan for loan in loans if loan.can_be_renewed]
+    assert renewable, "the recording no longer exercises a renewable row"
+    for loan in renewable:
+        assert loan.item_id.isdigit()
+        assert f'value="{loan.item_id}"' in checkouts
+    for loan in loans:
+        if not loan.can_be_renewed:
+            assert f"biblionumber={loan.item_id}" in loan.detail_url
 
 
 async def test_this_koha_renders_no_checkout_date_column(checkouts: str) -> None:
@@ -241,7 +249,7 @@ async def test_a_detail_page_yields_its_isbn() -> None:
             enriched = await backend.fetch_details(loan)
         finally:
             await backend.close()
-    assert enriched.isbn == "9783473460625"
+    assert enriched.isbn == "9783836958424"
 
 
 async def test_a_product_ean_is_not_reported_as_an_isbn() -> None:
@@ -308,7 +316,7 @@ async def test_a_book_row_yields_a_barcode_and_a_call_number(ausleihen: str) -> 
         assert loan.barcode and loan.barcode.isdigit() and len(loan.barcode) >= 6
         assert loan.call_number
         assert loan.item_id == loan.barcode
-        assert loan.author
+    assert any(loan.author for loan in books), "no book row carries an author to split"
 
 
 async def test_a_short_numeric_shelf_mark_is_not_taken_for_a_barcode(ausleihen: str) -> None:
@@ -354,10 +362,12 @@ async def test_renewal_state_is_read_from_the_hinweis_column(ausleihen: str) -> 
 
 async def test_the_row_checkboxes_are_named_the_way_renewal_posts_them(ausleihen: str) -> None:
     """renew_loan() sends back the checkbox it finds in the row's first cell.
-    aDIS names them cellCheck, cellCheck$1, cellCheck$2 ..., and a fixture
-    that invents another name would let a rename through unnoticed."""
-    assert 'name="cellCheck"' in ausleihen
-    assert 'name="cellCheck$1"' in ausleihen
+    The live aDIS names every one of them $RTable_checkbox[] and tells them
+    apart by value (CheckCell for the header, CheckCell_N per row), and a
+    fixture that invented another shape would let a rename through
+    unnoticed."""
+    assert 'name="$RTable_checkbox[]"' in ausleihen
+    assert 'value="CheckCell_1"' in ausleihen
 
 
 def _first_form(name: str) -> Tag:
@@ -369,26 +379,36 @@ def _first_form(name: str) -> Tag:
 
 
 async def test_the_account_overview_links_the_loan_listing() -> None:
-    """login() finds its way to the loans through div#konto-services; without
-    that link there is nothing to fetch."""
+    """login() finds its way to the loans through div#konto-services. The
+    live account page renders the links as href="#" and wires the click in a
+    page script, so the target has to come out of _js_link_code -- without
+    that code there is nothing to fetch."""
     soup = BeautifulSoup(_recorded("stuttgart_account.html"), features="html.parser")
-    links = [link for link in soup.select("div#konto-services li a") if "Ausleihen" in link.text]
-    assert links, "no Ausleihen link on the recorded account page"
-    assert str(links[0].attrs["href"]).startswith("/aDISWeb/app")
+    link = next(
+        (item for item in soup.select("div#konto-services li a") if "Ausleihen" in item.text),
+        None,
+    )
+    assert link is not None, "no Ausleihen link on the recorded account page"
+    assert str(link.attrs.get("href", "")) == "#"
+    assert StuttgartBackend._js_link_code(soup, link) == "*SZA"
 
 
 async def test_the_start_page_carries_the_form_login_begins_with() -> None:
     form = _first_form("stuttgart_home.html")
-    assert str(form.attrs["action"]).startswith("/aDISWeb/app")
+    # Modern aDIS carries the session in the form action's path segment
+    # instead of a jsessionid; the anonymiser rewrites it to one fake id.
+    assert re.match(r"^/aDISWeb/_[0-9a-f]{32}/app$", str(form.attrs["action"]))
     names = {inp.get("name") for inp in form.find_all("input")}
-    assert {"service", "sp", "Form0", "requestCount", "scriptEnabled"} <= names
+    assert {"identity", "requestCount", "scriptEnabled", "$Autosuggest"} <= names
 
 
 async def test_the_credentials_form_takes_the_fields_login_fills_in() -> None:
     """Step 2 of the aDIS flow. The field names are positional nonsense
     ($Textfield, $Textfield$0) and only a recording can vouch for them."""
     form = _first_form("stuttgart_login_form.html")
-    assert str(form.attrs["action"]).startswith("/aDISWeb/app")
+    assert re.match(r"^/aDISWeb/_[0-9a-f]{32}/app$", str(form.attrs["action"]))
+    names = {inp.get("name") for inp in form.find_all("input")}
+    assert {"$Textfield", "$Textfield$0", "$Button"} <= names
 
 
 # --- the recordings themselves ------------------------------------------
@@ -417,9 +437,9 @@ async def test_the_credentials_form_takes_the_fields_login_fills_in() -> None:
 def test_no_recording_carries_a_live_session_or_a_patron(name: str) -> None:
     """The recordings are committed, so the anonymiser has to have run. A
     fixture that still holds a session id is a credential in the repository."""
-    import re
-
     html = _recorded(name)
+    for session in re.findall(r"/aDISWeb/(_[0-9a-f]{32})/app", html):
+        assert session == "_0123456789abcdef0123456789abcdef"
     for session in re.findall(r"jsessionid=([0-9A-Fa-f]{16,})", html):
         assert session == "0123456789ABCDEF0123456789ABCDEF"
     assert "11001558" not in html, "the real Koha borrowernumber is still in this fixture"
@@ -443,8 +463,8 @@ def test_the_loan_listing_itself_carries_no_cover(ausleihen: str) -> None:
 
 def test_a_result_row_keeps_its_jacket_in_a_lazy_data_src() -> None:
     """The rows aDIS returns for a catalogue search carry the cover in
-    ``data-src`` (its JS swaps it into ``src`` later); the ``src`` is a
-    placeholder gif. Reading ``src`` alone finds nothing."""
+    ``data-src`` (its JS swaps it into ``src`` later); an ``img-delayed`` row
+    has no ``src`` at all until then. Reading ``src`` alone finds nothing."""
     soup = BeautifulSoup(_recorded("stuttgart_search_03.html"), features="html.parser")
     row = next(
         item
@@ -452,7 +472,7 @@ def test_a_result_row_keeps_its_jacket_in_a_lazy_data_src() -> None:
         if "Python Crashkurs" in str(item.select_one("div.rList_titel a").get_text())
     )
     img = row.select_one("div.rList_img img")
-    assert "placeholder" in str(img["src"])
+    assert "src" not in img.attrs
     assert str(img["data-src"]).startswith("https://api.vlb.de/api/v1/cover/")
     # the token is baked into the URL by the OPAC; dropping it answers 401
     assert "access_token=" in str(img["data-src"])

@@ -1,5 +1,29 @@
 # Changelog
 
+
+## v1.4.2
+
+### Stuttgart login works against the current aDIS again
+
+- The live aDIS renamed the submit fields of its forms (`textButton*` ->
+  `$Button*`) without touching the visible labels. The backend popped the old
+  names off the posted data, so every button value of the form went out at
+  once (Anmelden, Abbrechen, Passwort vergessen?, Bibliothekskunde) and the
+  server read the click as something other than "Anmelden": every login ended
+  in `AuthenticationError` despite correct credentials. The clicked button is
+  now resolved by its label at runtime and posted alone, both for the login
+  and for "Markierte Medien verlängern".
+- The session moved out of `jsessionid=` into the URL path
+  (`/aDISWeb/_<sid>/app`), and the account page's service links became
+  `href="#"` wired by a page script: `login()` now extracts the aDIS target
+  code from that script (`top.htmlOnLink("*SZA")`) and reaches the loan
+  listing with the POST the browser would send, instead of following a URL
+  that no longer renders the listing. The old plain-`href` link is still
+  followed when the page renders one.
+- Recorded fixtures re-captured from the live installations (2026-10-05);
+  `test_recorded_pages.py` asserts the parsers against them, so a fixture
+  that drifts from the server fails loudly instead of hiding the drift.
+
 ## v1.4.1
 
 - Packaging: `pyproject.toml` carries the released version. The flake derives

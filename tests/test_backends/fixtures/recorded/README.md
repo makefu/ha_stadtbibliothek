@@ -13,26 +13,30 @@ recordings are the counterweight: whatever the real servers send, they say so.
 
 ## Provenance
 
-Captured 2026-08-31 from the accounts in `.secrets.yml`; the
-`stuttgart_search_*` pages on 2026-09-28.
+Captured 2026-10-05 from the accounts in `.secrets.yml`. The previous set
+came from 2026-08-31/2026-09-28 and described an older aDIS: the live site
+since moved the session from `jsessionid=` into the URL path
+(`/aDISWeb/_<sid>/app`) and renamed the form submit fields, which broke the
+backend against a fixture set that had stopped matching the server.
 
 | File | Request | Notes |
 | --- | --- | --- |
-| `remseck_checkouts.html` | `GET /cgi-bin/koha/opac-user.pl` | Koha 22.11, 27 loans. Also the body the login `POST` returns. |
+| `remseck_checkouts.html` | `GET /cgi-bin/koha/opac-user.pl` | Koha 22.11, 5 loans, two of them renewable (`input[name="item"]`). Also the body the login `POST` returns. |
 | `remseck_account.html` | `GET /cgi-bin/koha/opac-account.pl` | `#finestable` present with an empty `tbody`: no fees owed. |
 | `remseck_logged_out.html` | same URL, no session | `form#auth`, none of the masthead markers. |
 | `remseck_detail.html` | `GET /cgi-bin/koha/opac-detail.pl?biblionumber=…` | Carries `span[property="isbn"]`. |
 | `remseck_detail_ean.html` | same, different record | A tiptoi puzzle: no ISBN, and an `ean` of `4005556001385`. |
 | `stuttgart_home.html` | `GET /?service=…&sp=SOPAC` | Search mask; step 1 of the aDIS login. |
 | `stuttgart_login_form.html` | `POST` of step 1 | The credentials form. |
-| `stuttgart_account.html` | `POST` of the credentials | "Mein Konto", carrying `div#konto-services`. |
-| `stuttgart_ausleihen.html` | `GET` the Ausleihen link | aDIS/BMS, 11 loans. |
-| `stuttgart_search_00..04.html` | `POST` of the start-page search form, one query per loan title of the *constructed* `../stuttgart_ausleihen.html`, `SRCHAW=Katalog` | The cover route: result rows (`li.rList_li`) with lazily-loaded `api.vlb.de` jackets in `data-src`. `00`/`04` answer with rows that match no title; `00` even landed on the home page. |
+| `stuttgart_account.html` | `POST` of the credentials | "Mein Konto", carrying `div#konto-services`. The service links are `href="#"`; a page script wires each id to `top.htmlOnLink("*SZA")`-style clicks. |
+| `stuttgart_ausleihen.html` | `POST` of the account page's form (the JS-nav click) | aDIS/BMS, 49 loans. The row checkboxes all share `name="$RTable_checkbox[]"` and are told apart by value (`CheckCell_N`). |
+| `stuttgart_search_00..04.html` | `POST` of the start-page search form, one query per loan title of the *constructed* `../stuttgart_ausleihen.html`, `SRCHAW=Katalog` | The cover route: result rows (`li.rList_li`) with lazily-loaded `api.vlb.de` jackets in `data-src` (`img-delayed` rows have no `src` at all). `00`/`04` answer with rows that match no title; `00` even landed on the home page. |
 | `stuttgart_search_05.html` | same, query "Der Koboldmaki und der große Sturm" | A query the OPAC answers with a single-hit Vollanzeige (`div.show-full-basics`, no result rows): the cover sits in the detail block, and `p.info` echoes the query. |
 
-No renewal response is recorded: renewing is a real change to a real account,
-and the recorded Remseck loans were all inside their `no-renewal-before`
-window anyway. The renewal fixtures one directory up stay constructed.
+No renewal response is recorded: renewing is a real change to a real account.
+The renewal fixtures one directory up stay constructed, and the constructed
+Stuttgart listing mirrors the live one's checkbox naming so a rename still
+fails loudly here first.
 
 The search fixtures are keyed to the constructed fixture's titles, not to
 whatever was out on the live account, because `test_stuttgart.py` routes its

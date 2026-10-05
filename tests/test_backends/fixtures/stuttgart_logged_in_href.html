@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- Older aDIS installations still render the service links as plain hrefs;
+     that is the branch login() takes when the link carries a target. The
+     recorded account page of 2026-08 showed this shape, so it still exists in
+     the wild. -->
+<html lang="de"><head><title>Mein Konto - Stadtbibliothek Stuttgart</title></head>
+<body class="opac01">
+<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/_0123456789abcdef0123456789abcdef/app">
+<input type="hidden" name="identity" value="TESTIDENTaccount"/>
+<input type="hidden" name="requestCount" value="3"/>
+</form></div>
+<div id="konto-services">
+<div class="html_div"><h2>Servicebereiche</h2>
+<ul>
+<li><a href="/aDISWeb/app;jsessionid=TESTLOGIN456DEF?service=direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$InternalLink.directlink&amp;sp=S%24%24GFBO_2&amp;sp=SBK00000001&amp;requestCount=2">Ausleihen (5)</a></li>
+<li><a href="/aDISWeb/app;jsessionid=TESTLOGIN456DEF?service=direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$InternalLink$1.directlink&amp;sp=S%24%24GFBO_3&amp;sp=SBK00000002&amp;requestCount=2">Vormerkungen (0)</a></li>
+</ul></div>
+</div>
+</body></html>

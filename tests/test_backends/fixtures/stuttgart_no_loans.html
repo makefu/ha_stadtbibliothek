@@ -1,14 +1,16 @@
 <!DOCTYPE html>
+<!-- The listing of an empty account: the rTable_table is there, its tbody is
+     not. Derived from stuttgart_ausleihen.html (constructed markup). -->
 <html lang="de"><head><title>Ausleihen - Stadtbibliothek Stuttgart</title></head>
 <body class="opac01">
-<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/app;jsessionid=TESTLOGIN456DEF">
-<input type="hidden" name="service" value="direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$Form.form"/>
+<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/_0123456789abcdef0123456789abcdef/app">
+<input type="hidden" name="identity" value="TESTIDENTausleihen"/>
 <input type="hidden" name="requestCount" value="5"/>
 </form></div>
 <div id="R05"><div class="rTable_div">
 <table class="rTable_table">
-<thead class="rTable_thead">
-<tr><th></th><th>F&auml;llig am</th><th>Bibliothek</th><th>Titel</th><th>Hinweis</th></tr>
+<thead class="rTable_head">
+<tr><th scope="col">Fällig am</th><th scope="col">Bibliothek</th><th scope="col">Titel</th><th scope="col">Hinweis</th></tr>
 </thead>
 </table>
 </div></div>

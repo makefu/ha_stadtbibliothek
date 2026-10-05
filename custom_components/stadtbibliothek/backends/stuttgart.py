@@ -41,6 +41,13 @@ class StuttgartBackend(LibraryBackend):
 
     CLIENT_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"}
 
+    #: The label of the button that renews the ticked loans. aDIS renamed the
+    #: submit fields behind its labels (``textButton`` -> ``$Button``) without
+    #: changing the labels, so the click is resolved by label at runtime.
+    RENEW_SELECTED_LABEL = "Markierte Medien verlängern"
+    #: The label of the button that submits the credentials.
+    LOGIN_BUTTON_LABEL = "Anmelden"
+
     def __init__(
         self,
         client: httpx.AsyncClient | None = None,
@@ -49,86 +56,116 @@ class StuttgartBackend(LibraryBackend):
     ) -> None:
         super().__init__(client, base_url=base_url)
         self._login_url: str | None = None
+        #: Direct href of the loan listing, when the account page renders one.
         self._ausleihen_url: str | None = None
+        #: The account page's form action and postable fields, plus the
+        #: ``selected`` value its Ausleihen link's click handler submits. Only
+        #: one-shot: aDIS ties the form's ``identity`` to that one render.
+        self._ausleihen_nav: tuple[str, dict[str, str]] | None = None
+        #: The Ausleihen page fetched by login(), parsed once by get_loans().
+        self._loans_page: BeautifulSoup | None = None
+        self._credentials: tuple[str, str] | None = None
 
     async def login(self, username: str, password: str) -> None:
-        # Step 1: GET start page, extract form with jsessionid
+        self._credentials = (username, password)
+        self._loans_page = None
+        account_html = await self._walk_to_account()
+        soup = BeautifulSoup(account_html, features="html.parser")
+        link = next((a for a in soup.select("div#konto-services li a") if "Ausleihen" in a.text), None)
+        if link is None:
+            raise AuthenticationError("Login failed: konto-services with Ausleihen link not found")
+
+        href = str(link.attrs.get("href", ""))
+        if href and href != "#":
+            self._ausleihen_url = urljoin(f"{self.base_url}/", href)
+            self._ausleihen_nav = None
+            return
+
+        # Newer aDIS renders the service links as href="#" and wires the click
+        # to top.htmlOnLink(code) in a page script, which posts the page's
+        # form with selected=ZTEXT <code>. The listing is reached by that POST.
+        code = self._js_link_code(soup, link)
+        form = soup.find("form")
+        if code is None or not isinstance(form, Tag):
+            raise AuthenticationError("Login failed: the Ausleihen link carries no target")
+        self._ausleihen_url = None
+        self._ausleihen_nav = (
+            urljoin(f"{self.base_url}/", str(form.attrs["action"])),
+            # aDIS's own doSubmit() posts exactly "ZTEXT       " + code; the
+            # padding is significant, a single space sends the click back to
+            # the account overview.
+            {**self._form_fields(form), "selected": f"ZTEXT       {code}"},
+        )
+
+    async def _walk_to_account(self) -> str:
+        """Start page -> credentials form -> account overview.
+
+        Every aDIS form carries a single-use identity token: a page's form can
+        be POSTed once, so each walk fetches the pages afresh.
+        """
+        if self._credentials is None:
+            raise RuntimeError("Must call login() first")
+        username, password = self._credentials
+
         resp = await self._client.get(f"{self.base_url}{self.START_PATH}")
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, features="html.parser")
-
-        form = soup.find("form")
+        form = BeautifulSoup(resp.text, features="html.parser").find("form")
         if not isinstance(form, Tag):
             raise AuthenticationError("No form found on start page")
+        self._login_url = urljoin(f"{self.base_url}/", str(form.attrs["action"]))
 
-        action_path = form.attrs["action"]
-        self._login_url = f"{self.base_url}{action_path}"
-
-        data = self._extract_hidden_inputs(form)
+        # The Anmelden control is a type=button whose click handler writes its
+        # target into the hidden field; a browser never posts the button.
+        data = self._form_fields(form)
         data["SUO1_AUTHFU_1_hidden"] = ""
         data["select"] = "- Alle -"
         data["selected"] = "ZTEXT       *SBK"
-        data["Form0"] = (
-            "focus,keyCode,stz,source,selected,requestCount,scriptEnabled,"
-            "scrollPos,scrDim,winDim,imgDim,SUO1_AUTHFU_1,$Autosuggest,"
-            "select,$FormConditional,textButton,$FormConditional$0,"
-            "textButton$0,$FormConditional$1,$FormConditional$2,"
-            "$FormConditional$3,$FormConditional$4"
-        )
-        data.pop("textButton$0", None)
+        resp = await self._post_form(self._login_url, data)
 
-        # Step 2: POST to get login form, then fill credentials
-        resp = await self._client.post(
-            self._login_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, features="html.parser")
-
-        form = soup.find("form")
+        form = BeautifulSoup(resp.text, features="html.parser").find("form")
         if not isinstance(form, Tag):
             raise AuthenticationError("No login form found")
-
-        data = self._extract_hidden_inputs(form)
+        data = self._form_fields(form)
         data["$Textfield"] = username
         data["$Textfield$0"] = password
-        data["focus"] = "$$GFBO_2"
         data["scriptEnabled"] = "true"
-        data.pop("textButton$0", None)
-        data.pop("textButton$1", None)
-        data.pop("textButton$2", None)
-        data["Form0"] = (
-            "focus,keyCode,stz,source,select,selected,requestCount,"
-            "scriptEnabled,scrollPos,scrDim,winDim,imgDim,$Textfield,"
-            "$Textfield$0,$FormConditional,textButton,$FormConditional$0,"
-            "textButton$0,$FormConditional$1,textButton$1,"
-            "$FormConditional$2,textButton$2"
-        )
+        if not self._click(form, data, self.LOGIN_BUTTON_LABEL):
+            raise AuthenticationError(f"Login form has no {self.LOGIN_BUTTON_LABEL!r} button")
+        resp = await self._post_form(self._login_url, data)
 
-        # Step 3: POST credentials, find Ausleihen link
-        resp = await self._client.post(
-            self._login_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
         soup = BeautifulSoup(resp.text, features="html.parser")
+        if soup.select_one("div#konto-services") is None:
+            raise AuthenticationError("Login failed: no konto-services on the account page")
+        return resp.text
 
-        for link in soup.select("div#konto-services li a"):
-            if "Ausleihen" in link.text:
-                self._ausleihen_url = f"{self.base_url}{link.attrs['href']}"
-                return
+    async def _open_ausleihen(self) -> BeautifulSoup:
+        """Fetch the loan listing through whichever route login resolved.
 
-        raise AuthenticationError("Login failed: konto-services with Ausleihen link not found")
+        The account page's form is single-use (its identity token burns on the
+        first submit), so this consumes the navigation login captured.
+        """
+        if self._ausleihen_nav is not None:
+            url, fields = self._ausleihen_nav
+            self._ausleihen_nav = None
+            resp = await self._post_form(url, fields)
+        elif self._ausleihen_url is not None:
+            resp = await self._client.get(self._ausleihen_url)
+            resp.raise_for_status()
+        else:
+            raise RuntimeError("Must call login() before fetching loans")
+        return BeautifulSoup(resp.text, features="html.parser")
+
+    async def _ensure_ausleihen_page(self) -> BeautifulSoup:
+        """The listing to act on: login's fetch, renewed away by a previous
+        renew_loan, or a fresh fetch. The parse of a page is single-use."""
+        if self._loans_page is None:
+            if not (self._ausleihen_url or self._ausleihen_nav):
+                raise RuntimeError("Must call login() before fetching loans")
+            self._loans_page = await self._open_ausleihen()
+        return self._loans_page
 
     async def get_loans(self) -> list[LoanItem]:
-        if not self._ausleihen_url:
-            raise RuntimeError("Must call login() before get_loans()")
-
-        resp = await self._client.get(self._ausleihen_url)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, features="html.parser")
+        soup = await self._ensure_ausleihen_page()
 
         listing = soup.select_one(self.RESULTS_MARKER)
         if listing is None:
@@ -224,21 +261,15 @@ class StuttgartBackend(LibraryBackend):
         if form is None:
             return None
 
-        data = self._extract_hidden_inputs(form)
+        data = self._form_fields(form)
         data["$Autosuggest"] = query
         # A radio group with nothing checked posts nothing; "Katalog" is the
         # difference between cover-carrying hits and "Treffer in Infoseiten".
         data["SRCHAW"] = "Katalog"
-        data["textButton"] = "Suchen"
-        data.pop("textButton$0", None)
+        if not self._click(form, data, "Suchen"):
+            return None
 
-        action = form.attrs["action"]
-        resp = await self._client.post(
-            urljoin(f"{self.base_url}/", str(action)),
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
+        resp = await self._post_form(urljoin(f"{self.base_url}/", str(form.attrs["action"])), data)
         soup = BeautifulSoup(resp.text, features="html.parser")
 
         cover = self._best_match_cover(soup, query)
@@ -308,22 +339,24 @@ class StuttgartBackend(LibraryBackend):
         return []
 
     async def renew_loan(self, item_id: str) -> bool:
-        if not self._ausleihen_url:
-            raise RuntimeError("Must call login() before renew_loan()")
-
-        resp = await self._client.get(self._ausleihen_url)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, features="html.parser")
+        # The listing's form is single-use: its identity token burns on the
+        # first submit. What is cached -- login's fetch or the previous
+        # renewal's response -- still has an unused one; when nothing is
+        # cached, the account page is already spent, so walk it again.
+        soup = self._loans_page
+        if soup is None:
+            if not (self._ausleihen_url or self._ausleihen_nav):
+                if self._credentials is None:
+                    raise RuntimeError("Must call login() before renew_loan()")
+                await self.login(*self._credentials)
+            soup = await self._ensure_ausleihen_page()
 
         form = soup.find("form")
         if not isinstance(form, Tag):
             raise RuntimeError("No form found on Ausleihen page")
 
-        action_url = f"{self.base_url}{form.attrs['action']}"
-        data = self._extract_hidden_inputs(form)
-
-        # Remove all submit button values — only the clicked button should be sent
-        data = {k: v for k, v in data.items() if not k.startswith("textButton")}
+        action_url = urljoin(f"{self.base_url}/", str(form.attrs["action"]))
+        data = self._form_fields(form)
 
         # Find the checkbox whose row contains the target item_id
         table = soup.select_one("table.rTable_table tbody")
@@ -350,21 +383,21 @@ class StuttgartBackend(LibraryBackend):
             raise RenewalError(f"Item {item_id} not found in loan table")
 
         # "Markierte Medien verlängern" = renew selected items
-        data["textButton$1"] = "Markierte Medien verlängern"
+        if not self._click(form, data, self.RENEW_SELECTED_LABEL):
+            raise RenewalError(f"No {self.RENEW_SELECTED_LABEL!r} button on the Ausleihen page")
 
-        resp = await self._client.post(
-            action_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
-
+        resp = await self._post_form(action_url, data)
         # Check for error messages in the response
         result_soup = BeautifulSoup(resp.text, features="html.parser")
         error_div = result_soup.select_one("div.aDISError")
+
+        # The answer is the listing again, renewed. Keep it: the next renewal
+        # needs neither a re-login nor a re-fetch. On an error the same page
+        # may carry a fresh form token, and the posted page's token is spent,
+        # so it replaces the cache either way.
+        self._loans_page = result_soup if result_soup.select_one(self.RESULTS_MARKER) else None
         if error_div:
             raise RenewalError(error_div.get_text(strip=True))
-
         return True
 
     async def renew_all(self, days_remaining_threshold: int = 7) -> int:
@@ -417,14 +450,76 @@ class StuttgartBackend(LibraryBackend):
         return media_type, title, author, publisher, call_number, barcode
 
     @staticmethod
-    def _extract_hidden_inputs(form: Tag) -> dict[str, str]:
+    def _form_fields(form: Tag) -> dict[str, str]:
+        """The fields a browser would submit, buttons aside.
+
+        Submit/button values are dropped: aDIS dispatches a posted form on
+        which single button carried the click, and every stray button value
+        makes the server lose the action. _click() re-adds the one button that
+        was "pressed". Unchecked checkboxes and radios post nothing, so they
+        are skipped too.
+        """
         data: dict[str, str] = {}
         for inp in form.find_all("input"):
             name = inp.get("name")
-            if name and isinstance(name, str):
-                value = inp.get("value", "")
-                data[name] = str(value)
+            if not name or not isinstance(name, str):
+                continue
+            kind = str(inp.get("type") or "text").lower()
+            if kind in ("submit", "button", "image", "reset"):
+                continue
+            if kind in ("checkbox", "radio") and inp.get("checked") is None:
+                continue
+            data[name] = str(inp.get("value", ""))
         return data
+
+    @staticmethod
+    def _click(form: Tag, data: dict[str, str], label: str) -> bool:
+        """Add the clicked button to the payload; False if it is not there.
+
+        The submit field names are generated (they moved from ``textButton*``
+        to ``$Button*`` between site versions), so the button is found by its
+        visible label, exactly like a user finds it.
+        """
+        for btn in form.find_all(["input", "button"]):
+            if btn.get("value") == label and btn.get("name"):
+                data[str(btn["name"])] = label
+                return True
+        return False
+
+    async def _post_form(self, url: str, data: dict[str, str]) -> httpx.Response:
+        resp = await self._client.post(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        resp.raise_for_status()
+        return resp
+
+    @staticmethod
+    def _js_link_code(soup: BeautifulSoup, link: Tag) -> str | None:
+        """The aDIS target code behind an href="#" link's JS click handler.
+
+        Such links carry no onclick: a page script wires them with
+        ``document.getElementById("idfn9")?.addEventListener("click", fn9,
+        false)``, and the same script defines ``function fn9(e){
+        e.preventDefault(); top.htmlOnLink("*SZA");}``. The click submits the
+        page's form with ``selected=ZTEXT <code>``; this returns the code.
+        """
+        scripts = "\n".join(s.get_text() for s in soup.find_all("script"))
+        link_id = str(link.attrs.get("id") or "")
+        handler = None
+        if link_id:
+            wired = re.search(r'getElementById\(["\']' + re.escape(link_id) + r'["\']\)[^;]*?,\s*(\w+)\s*,', scripts)
+            if wired is not None:
+                handler = wired.group(1)
+        if handler is None:
+            # Older pages put the call in an onclick attribute instead.
+            onclick = re.search(r"\b(\w+)\s*\(", str(link.attrs.get("onclick") or ""))
+            handler = onclick.group(1) if onclick else None
+        if handler is None:
+            return None
+        # Both spellings occur across aDIS versions: htmlOnLink, htmlOnLnk.
+        target = re.search(
+            r"function\s+" + re.escape(handler) + r"\s*\([^)]*\)\s*\{[^}]*?htmlOnLin?k\([\"']([^\"']+)[\"']",
+            scripts,
+        )
+        return target.group(1) if target else None
 
     @staticmethod
     def _split_br(cell: Tag) -> list[str]:

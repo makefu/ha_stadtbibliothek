@@ -1,16 +1,37 @@
 <!DOCTYPE html>
+<!-- New-generation aDIS account overview ("Mein Konto"). The service links
+     are href="#": a page script wires each id to a function that posts the
+     page form with selected=ZTEXT <code>, so login() must dig the code out
+     of the script (see _js_link_code). Mirrors the live pages captured 2026-10. -->
 <html lang="de"><head><title>Mein Konto - Stadtbibliothek Stuttgart</title></head>
 <body class="opac01">
-<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/app;jsessionid=TESTLOGIN456DEF">
-<input type="hidden" name="service" value="direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$Form.form"/>
+<div class="aDISMaske"><form method="post" name="Form0" action="/aDISWeb/_0123456789abcdef0123456789abcdef/app">
+<input type="hidden" name="identity" value="TESTIDENTaccount"/>
+<input type="hidden" name="keyCode" value="0"/>
+<input type="hidden" name="focus" value=""/>
+<input type="hidden" name="stz" value=""/>
+<input type="hidden" name="source" value=""/>
+<input type="hidden" name="selected" value=""/>
+<input type="hidden" name="requestCount" value="3"/>
+<input type="hidden" name="scriptEnabled" value="true"/>
+<input type="hidden" name="scrollPos" value="0"/>
 </form></div>
-<section id="results">
 <div id="konto-services">
+<div class="html_div"><h2>Servicebereiche</h2>
 <ul>
-<li><a href="/aDISWeb/app;jsessionid=TESTLOGIN456DEF?service=direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$InternalLink.directlink&amp;sp=S%24%24GFBO_2&amp;sp=SBK00000001&amp;requestCount=2">Ausleihen (5)</a></li>
-<li><a href="/aDISWeb/app;jsessionid=TESTLOGIN456DEF?service=direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$InternalLink$1.directlink&amp;sp=S%24%24GFBO_3&amp;sp=SBK00000002&amp;requestCount=2">Vormerkungen (0)</a></li>
-<li><a href="/aDISWeb/app;jsessionid=TESTLOGIN456DEF?service=direct/1/POOLM02QPRODXYZ@_4B031500_41AE5B00/$InternalLink$2.directlink&amp;sp=S%24%24GFBO_4&amp;sp=SBK00000003&amp;requestCount=2">Gebühren (0,00 EUR)</a></li>
-</ul>
+<li><a href="#" id="idfn9">Ausleihen (5)</a></li>
+<li><span>Keine Vormerkungen</span></li>
+<li><a href="#" id="idfn10">Gebührenkonto</a></li>
+</ul></div>
 </div>
-</section>
+<script type="text/javascript">
+function adisInit(){
+document.getElementById("onscriptbuttonScriptButton")?.addEventListener("click", fn1, false);
+document.getElementById("idfn9")?.addEventListener("click", fn9, false);
+document.getElementById("idfn10")?.addEventListener("click", fn10, false);
+}
+function fn9(e){e.preventDefault();top.htmlOnLink("*SZA");}
+function fn10(e){e.preventDefault();top.htmlOnLink("*SGG");}
+function htmlOnLink(link){var f=document.forms[0];f.selected.value="ZTEXT       "+link;f.submit();}
+</script>
 </body></html>

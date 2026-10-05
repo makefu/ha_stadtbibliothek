@@ -39,8 +39,15 @@ FAKE_SURNAME = "Mustermann"
 #: scoped. Remapped rather than blanked: distinct handles have to stay
 #: distinct, or the Ausleihen link stops being distinguishable from any other.
 _ADIS_HANDLE = re.compile(r"_[0-9A-F]{8}_[0-9A-F]{8}")
+#: Newer aDIS puts the session id in the URL path instead: /aDISWeb/_<sid>/app.
+#: A fixed stand-in; the segment has to stay, or the recorded action URLs stop
+#: pointing at anything the parser could follow.
+_ADIS_SID = re.compile(r"(?<=/aDISWeb/)_[A-Za-z0-9]{16,}(?=/app)")
+FAKE_ADIS_SID = "_0123456789abcdef0123456789abcdef"
 _JSESSIONID = re.compile(r"(?<=jsessionid=)[0-9A-F]{16,}")
 _ABHOLCODE = re.compile(r"(Abholcode:\s*)\S+")
+#: Some aDIS pages table the code instead of spelling it inline.
+_ABHOLCODE_CELL = re.compile(r"(Abholcode\s*</(?:th|dt)>\s*<(?:td|dd)[^>]*>\s*)([^<\s]+)")
 _CSRF = re.compile(r'(name="csrf_token"[^>]*value=")[^"]*(")')
 
 
@@ -79,7 +86,9 @@ class Anonymiser:
             text = text.replace(self._borrowernumber, FAKE_BORROWERNUMBER)
         text = _JSESSIONID.sub(FAKE_JSESSIONID, text)
         text = _ADIS_HANDLE.sub(self._handle, text)
+        text = _ADIS_SID.sub(FAKE_ADIS_SID, text)
         text = _ABHOLCODE.sub(rf"\g<1>{FAKE_ABHOLCODE}", text)
+        text = _ABHOLCODE_CELL.sub(rf"\g<1>{FAKE_ABHOLCODE}", text)
         text = _CSRF.sub(r"\g<1>0000000000000000\g<2>", text)
         return text
 
@@ -88,6 +97,7 @@ class Anonymiser:
         for label, pattern in (
             ("jsessionid", rf"jsessionid=(?!{FAKE_JSESSIONID})[0-9A-F]{{16,}}"),
             ("Abholcode", rf"Abholcode:\s*(?!{FAKE_ABHOLCODE})\S+"),
+            ("Abholcode", rf"Abholcode\s*</(?:th|dt)>\s*<(?:td|dd)[^>]*>\s*(?!{FAKE_ABHOLCODE})[^<\s]+"),
         ):
             if re.search(pattern, text):
                 found.append(label)
@@ -195,8 +205,9 @@ async def record_stuttgart(recorder: Recorder, username: str, password: str) -> 
     backend = StuttgartBackend()
     client = backend._client
 
-    # login() does not keep the pages it walks through, so the three steps are
-    # repeated here. Any divergence from the backend is a bug in this script.
+    # login() does not keep the pages it walks through, so the steps are
+    # replayed here through the backend's own helpers. Any divergence from the
+    # backend is a bug in this script.
     resp = await client.get(f"{backend.base_url}{backend.START_PATH}")
     resp.raise_for_status()
     recorder.add("stuttgart_home", resp.text)
@@ -207,58 +218,47 @@ async def record_stuttgart(recorder: Recorder, username: str, password: str) -> 
         raise SystemExit("No form on the aDIS start page")
     login_url = f"{backend.base_url}{form.attrs['action']}"
 
-    data = backend._extract_hidden_inputs(form)
+    # The Anmelden type=button posts nothing itself; its handler fills only
+    # the hidden companion, which is what routes the POST into the login flow.
+    data = backend._form_fields(form)
     data["SUO1_AUTHFU_1_hidden"] = ""
     data["select"] = "- Alle -"
     data["selected"] = "ZTEXT       *SBK"
-    data["Form0"] = (
-        "focus,keyCode,stz,source,selected,requestCount,scriptEnabled,"
-        "scrollPos,scrDim,winDim,imgDim,SUO1_AUTHFU_1,$Autosuggest,"
-        "select,$FormConditional,textButton,$FormConditional$0,"
-        "textButton$0,$FormConditional$1,$FormConditional$2,"
-        "$FormConditional$3,$FormConditional$4"
-    )
-    data.pop("textButton$0", None)
-
-    resp = await client.post(login_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    resp.raise_for_status()
+    resp = await backend._post_form(login_url, data)
     recorder.add("stuttgart_login_form", resp.text)
 
-    soup = BeautifulSoup(resp.text, features="html.parser")
-    form = soup.find("form")
+    form = BeautifulSoup(resp.text, features="html.parser").find("form")
     if not isinstance(form, Tag):
         raise SystemExit("No aDIS login form")
-    data = backend._extract_hidden_inputs(form)
+    data = backend._form_fields(form)
     data["$Textfield"] = username
     data["$Textfield$0"] = password
-    data["focus"] = "$$GFBO_2"
     data["scriptEnabled"] = "true"
-    for key in ("textButton$0", "textButton$1", "textButton$2"):
-        data.pop(key, None)
-    data["Form0"] = (
-        "focus,keyCode,stz,source,select,selected,requestCount,"
-        "scriptEnabled,scrollPos,scrDim,winDim,imgDim,$Textfield,"
-        "$Textfield$0,$FormConditional,textButton,$FormConditional$0,"
-        "textButton$0,$FormConditional$1,textButton$1,"
-        "$FormConditional$2,textButton$2"
-    )
-
-    resp = await client.post(login_url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    resp.raise_for_status()
+    backend._click(form, data, StuttgartBackend.LOGIN_BUTTON_LABEL)
+    resp = await backend._post_form(login_url, data)
     recorder.add("stuttgart_account", resp.text)
 
-    soup = BeautifulSoup(resp.text, features="html.parser")
-    ausleihen_url = None
-    for link in soup.select("div#konto-services li a"):
-        if "Ausleihen" in link.text:
-            ausleihen_url = f"{backend.base_url}{link.attrs['href']}"
-            break
-    if ausleihen_url is None:
+    account = BeautifulSoup(resp.text, features="html.parser")
+    link = next((a for a in account.select("div#konto-services li a") if "Ausleihen" in a.text), None)
+    if link is None:
         raise SystemExit("Login succeeded but no Ausleihen link; nothing to record")
-
-    resp = await client.get(ausleihen_url)
-    resp.raise_for_status()
-    recorder.add("stuttgart_ausleihen", resp.text)
+    href = str(link.attrs.get("href", ""))
+    if href and href != "#":
+        # Old-style page: the listing is a plain GET.
+        ausleihen = await client.get(f"{backend.base_url}{href}")
+        ausleihen.raise_for_status()
+    else:
+        # New-style page: the listing only answers the link's JS click POST.
+        code = StuttgartBackend._js_link_code(account, link)
+        aform = account.find("form")
+        if code is None or not isinstance(aform, Tag):
+            raise SystemExit("The Ausleihen link carries no target; nothing to record")
+        fields = {**backend._form_fields(aform), "selected": f"ZTEXT       {code}"}
+        ausleihen = await backend._post_form(
+            f"{backend.base_url}{aform.attrs['action']}",
+            fields,
+        )
+    recorder.add("stuttgart_ausleihen", ausleihen.text)
 
     # The cover route: fetch_details() searches the catalogue for each loan
     # title and reads the jacket off the result row or the single-hit
@@ -284,17 +284,11 @@ async def record_stuttgart(recorder: Recorder, username: str, password: str) -> 
         sform = backend._find_search_form(BeautifulSoup(mask.text, features="html.parser"))
         if sform is None:
             raise SystemExit("No search form on the aDIS start page")
-        sdata = backend._extract_hidden_inputs(sform)
+        sdata = backend._form_fields(sform)
         sdata["$Autosuggest"] = query
         sdata["SRCHAW"] = "Katalog"
-        sdata["textButton"] = "Suchen"
-        sdata.pop("textButton$0", None)
-        resp = await client.post(
-            f"{backend.base_url}{sform.attrs['action']}",
-            data=sdata,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
+        backend._click(sform, sdata, "Suchen")
+        resp = await backend._post_form(f"{backend.base_url}{sform.attrs['action']}", sdata)
         kind = (
             "Vollanzeige" if "show-full-basics" in resp.text else ("Trefferliste" if "rList_li" in resp.text else "?")
         )

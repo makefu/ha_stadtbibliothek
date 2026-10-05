@@ -2,7 +2,7 @@
 
 from datetime import date
 from pathlib import Path
-from urllib.parse import parse_qs, unquote_plus
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -17,33 +17,66 @@ from custom_components.stadtbibliothek.backends.base import (
 from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
 
 FIXTURES = Path(__file__).parent / "fixtures"
+RECORDED = FIXTURES / "recorded"
 BASE_URL = "https://stadtbibliothek-stuttgart.de"
-SESSION_URL = f"{BASE_URL}/aDISWeb/app;jsessionid=TESTsession123ABC"
+#: Newer aDIS puts the session in the URL path instead of a jsessionid. The
+#: constructed fixtures all carry this fixed stand-in for it.
+SESSION_URL = f"{BASE_URL}/aDISWeb/_0123456789abcdef0123456789abcdef/app"
 
 
-def _read_fixture(name: str) -> str:
-    return (FIXTURES / name).read_text()
+def _fields(request: httpx.Request) -> dict[str, str]:
+    return {key: values[0] for key, values in parse_qs(request.content.decode(), keep_blank_values=True).items()}
 
 
-def _mock_login_flow() -> None:
-    """Set up respx mocks for the full 3-step login flow."""
-    # Step 1: GET start page
-    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
-    )
-    # Steps 1+2: POSTs to same jsessionid URL, return login form then logged-in page
-    respx.post(SESSION_URL).mock(
-        side_effect=[
-            httpx.Response(200, text=_read_fixture("stuttgart_login_form.html")),
-            httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html")),
-        ],
-    )
+def _page(name: str, *, recorded: bool = False) -> httpx.Response:
+    path = (RECORDED if recorded else FIXTURES) / name
+    return httpx.Response(200, text=path.read_text(encoding="utf-8"))
+
+
+def _mock_session(
+    *,
+    base_url: str = BASE_URL,
+    logged_in: str = "stuttgart_logged_in.html",
+    listing: str = "stuttgart_ausleihen.html",
+    renewal: str | None = None,
+    search: dict[str, str] | None = None,
+    unknown_search: str = "stuttgart_home.html",
+) -> None:
+    """Serve a whole session off one route per URL, dispatching each POST on
+    the fields it carries -- the same signals the real server routes on.
+    respx consults routes in registration order, so a second POST route for
+    the same URL is never reached once the first one answers.
+
+    The login POSTs, the JS-nav POST (selected=ZTEXT *SZA), the renewal POST
+    (the checked row checkbox) and the cover searches all go to the same
+    session URL on modern aDIS.
+    """
+    respx.get(f"{base_url}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(return_value=_page("stuttgart_home.html"))
+
+    def route(request: httpx.Request) -> httpx.Response:
+        fields = _fields(request)
+        query = fields.get("$Autosuggest", "")
+        if query:
+            if search is None:
+                return httpx.Response(404)
+            return _page(search[query], recorded=True) if query in search else _page(unknown_search, recorded=True)
+        if fields.get("selected", "").strip().endswith("*SZA"):
+            return _page(listing)
+        if "$RTable_checkbox[]" in fields:
+            return _page(renewal or listing)
+        if "$Textfield$0" in fields:
+            return _page(logged_in)
+        if "SUO1_AUTHFU_1_hidden" in fields:
+            return _page("stuttgart_login_form.html")
+        return httpx.Response(404)
+
+    respx.post(f"{base_url}/aDISWeb/_0123456789abcdef0123456789abcdef/app").mock(side_effect=route)
 
 
 @respx.mock
-async def test_login_step1_extracts_session() -> None:
-    """Step 1 GET extracts jsessionid from form action."""
-    _mock_login_flow()
+async def test_login_step1_extracts_the_session_url() -> None:
+    """The session rides in the start-page form's action path."""
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -51,14 +84,17 @@ async def test_login_step1_extracts_session() -> None:
     finally:
         await backend.close()
 
-    assert backend._login_url is not None
-    assert "jsessionid=TESTsession123ABC" in backend._login_url
+    assert backend._login_url == SESSION_URL
 
 
 @respx.mock
-async def test_login_step2_sends_credentials() -> None:
-    """Step 2 POST includes username and password in form data."""
-    _mock_login_flow()
+async def test_login_step2_sends_credentials_and_one_button() -> None:
+    """Regression: aDIS renamed the submit fields (textButton* -> $Button*)
+    while the code still popped the old names, so every button value of the
+    form -- Anmelden, Abbrechen, Passwort vergessen? -- went out together and
+    the server read the click as something else than "Anmelden". Only the
+    clicked button may be posted."""
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -66,18 +102,30 @@ async def test_login_step2_sends_credentials() -> None:
     finally:
         await backend.close()
 
-    # The second POST (index 1) is the credential submission
-    post_route = respx.routes[1]
-    assert post_route.call_count == 2
-    body = post_route.calls[1].request.content.decode()
-    assert "%24Textfield=5980610" in body
-    assert "%24Textfield%240=secret123" in body
+    posts = [_fields(call.request) for call in respx.calls if call.request.method == "POST"]
+    assert len(posts) == 2
+
+    step1 = posts[0]
+    assert step1["selected"] == "ZTEXT       *SBK"
+    # The Anmelden control is a type=button; a browser never posts it.
+    assert "$Button" not in step1
+
+    creds = posts[1]
+    assert creds["$Textfield"] == "5980610"
+    assert creds["$Textfield$0"] == "secret123"
+    assert creds["$Button"] == "Anmelden"
+    # The Abbrechen / Passwort vergessen? / Bibliothekskunde buttons of the
+    # same form must not ride along.
+    assert "$Button$0" not in creds
+    assert "$Button$1" not in creds
+    assert "$Button$2" not in creds
 
 
 @respx.mock
 async def test_login_success() -> None:
-    """Full 3-step login completes without error."""
-    _mock_login_flow()
+    """Newer aDIS renders the service links href="#" and posts the account
+    page's form from a page script; login() has to resolve that route."""
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -85,20 +133,43 @@ async def test_login_success() -> None:
     finally:
         await backend.close()
 
-    assert backend._ausleihen_url is not None
-    assert "SBK00000001" in backend._ausleihen_url
+    assert backend._ausleihen_url is None
+    assert backend._ausleihen_nav is not None
+    url, fields = backend._ausleihen_nav
+    assert url == SESSION_URL
+    assert fields["selected"] == "ZTEXT       *SZA"
+
+
+@respx.mock
+async def test_an_account_page_with_a_plain_href_is_still_followed() -> None:
+    """Older aDIS renders the Ausleihen link with a real href; login() must
+    take that route instead of parsing JS that is not there."""
+    _mock_session(logged_in="stuttgart_logged_in_href.html")
+    respx.get(url__regex=r".*sp=SBK00000001.*").mock(return_value=_page("stuttgart_ausleihen.html"))
+
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        assert backend._ausleihen_nav is None
+        assert backend._ausleihen_url is not None
+        assert backend._ausleihen_url.startswith(f"{BASE_URL}/aDISWeb/app;jsessionid=")
+        loans = await backend.get_loans()
+    finally:
+        await backend.close()
+
+    assert len(loans) == 5
 
 
 @respx.mock
 async def test_login_failure() -> None:
     """Login raises AuthenticationError when konto-services is missing."""
     respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+        return_value=_page("stuttgart_home.html"),
     )
     # Return login form, then a failure page (no konto-services)
     respx.post(SESSION_URL).mock(
         side_effect=[
-            httpx.Response(200, text=_read_fixture("stuttgart_login_form.html")),
+            _page("stuttgart_login_form.html"),
             httpx.Response(
                 200,
                 text="<html><body><div>Falsche Lesernummer</div></body></html>",
@@ -117,10 +188,7 @@ async def test_login_failure() -> None:
 @respx.mock
 async def test_get_loans() -> None:
     """Parses loan table into LoanItem objects with correct fields."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -168,10 +236,7 @@ async def test_get_loans() -> None:
 @respx.mock
 async def test_get_loans_parses_extension_info() -> None:
     """Extension column parsing: verlängerbar vs nicht verlängerbar, renewal counts."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -204,10 +269,7 @@ async def test_get_loans_parses_extension_info() -> None:
 @respx.mock
 async def test_get_loans_skips_media_type_prefix() -> None:
     """Media type like [CD] or [Konventionelles Spiel] is extracted, not in title."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -234,10 +296,7 @@ async def test_get_loans_skips_media_type_prefix() -> None:
 @respx.mock
 async def test_get_loans_strips_sort_indicators() -> None:
     """Non-sort indicator characters (¬) are stripped from titles."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session()
 
     backend = StuttgartBackend()
     try:
@@ -251,22 +310,37 @@ async def test_get_loans_strips_sort_indicators() -> None:
     assert loans[1].title == "Der kleine Prinz"
 
 
-def _mock_login_and_ausleihen() -> None:
-    """Set up mocks for login + Ausleihen page load."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+@respx.mock
+async def test_get_loans_off_the_account_page_raises_parse_error() -> None:
+    """Landing back on the search page means the session died, not that
+    nothing is borrowed. Reporting zero loans there would look like every
+    item had been returned."""
+    _mock_session(listing="stuttgart_home.html")
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        with pytest.raises(ParseError):
+            await backend.get_loans()
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_get_loans_with_an_empty_result_section_returns_empty() -> None:
+    """A results section without a loan table means the account is empty."""
+    _mock_session(listing="stuttgart_no_loans.html")
+    backend = StuttgartBackend()
+    try:
+        await backend.login("testuser", "testpass")
+        assert await backend.get_loans() == []
+    finally:
+        await backend.close()
 
 
 @respx.mock
 async def test_renew_loan_success() -> None:
-    """renew_loan posts the correct checkbox and returns True on success."""
-    _mock_login_and_ausleihen()
-    # After checking the checkbox and POSTing, server returns the renewed page
-    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
-    )
+    """renew_loan posts the row checkbox and returns True on success."""
+    _mock_session(renewal="stuttgart_renewed.html")
 
     backend = StuttgartBackend()
     try:
@@ -279,12 +353,11 @@ async def test_renew_loan_success() -> None:
 
 
 @respx.mock
-async def test_renew_loan_sends_correct_checkbox() -> None:
-    """renew_loan selects the checkbox matching the item_id."""
-    _mock_login_and_ausleihen()
-    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
-    )
+async def test_renew_loan_sends_the_row_checkbox_and_one_button() -> None:
+    """The renewal posts the checked row's value under the shared
+    $RTable_checkbox[] name plus exactly the clicked button -- a second
+    button value and aDIS loses the action."""
+    _mock_session(renewal="stuttgart_renewed.html")
 
     backend = StuttgartBackend()
     try:
@@ -293,18 +366,19 @@ async def test_renew_loan_sends_correct_checkbox() -> None:
     finally:
         await backend.close()
 
-    # The renewal POST is the last POST call (after the 2 login POSTs)
-    # Find the POST that includes check_1 (item "12345678" is row index 1)
-    last_post = respx.calls[-1]
-    body = last_post.request.content.decode()
-    assert "check_1=1" in body
-    assert "textButton%241=Markierte" in body  # textButton$1=Markierte Medien verlängern
+    posts = [_fields(call.request) for call in respx.calls if call.request.method == "POST"]
+    renewal = next(fields for fields in posts if "$RTable_checkbox[]" in fields)
+    assert renewal["$RTable_checkbox[]"] == "CheckCell_1"
+    assert renewal["$Button$1"] == "Markierte Medien verlängern"
+    assert "$Button" not in renewal  # Druckversion
+    assert "$Button$0" not in renewal  # Alle verlängern
+    assert "$Button$2" not in renewal  # Zur Übersicht
 
 
 @respx.mock
 async def test_renew_loan_item_not_found() -> None:
     """renew_loan raises RenewalError when item_id is not in the loan table."""
-    _mock_login_and_ausleihen()
+    _mock_session()
 
     backend = StuttgartBackend()
     with pytest.raises(RenewalError, match="NONEXISTENT.*not found"):
@@ -318,10 +392,7 @@ async def test_renew_loan_item_not_found() -> None:
 @respx.mock
 async def test_renew_loan_server_error() -> None:
     """renew_loan raises RenewalError with server message on failure."""
-    _mock_login_and_ausleihen()
-    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renew_failed.html")),
-    )
+    _mock_session(renewal="stuttgart_renew_failed.html")
 
     backend = StuttgartBackend()
     with pytest.raises(RenewalError, match="Maximale Anzahl"):
@@ -335,14 +406,7 @@ async def test_renew_loan_server_error() -> None:
 @respx.mock
 async def test_renew_all_renews_eligible_loans() -> None:
     """renew_all renews loans within the days_remaining threshold."""
-    _mock_login_and_ausleihen()
-    # Each individual renew_loan call will GET ausleihen then POST
-    respx.get(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
-    respx.post(url__regex=r".*jsessionid=TESTLOGIN456DEF.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_renewed.html")),
-    )
+    _mock_session(renewal="stuttgart_renewed.html")
 
     backend = StuttgartBackend()
     try:
@@ -352,22 +416,14 @@ async def test_renew_all_renews_eligible_loans() -> None:
     finally:
         await backend.close()
 
-    assert count == 4  # row 4 is "nicht verlängerbar"
+    assert count == 4  # the Python row is "nicht verlängerbar"
 
 
 @respx.mock
 async def test_base_url_override_redirects_all_requests() -> None:
     """A custom base_url points every request at the given host."""
     fake = "http://fake.local"
-    start = respx.get(f"{fake}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
-    )
-    respx.post(f"{fake}/aDISWeb/app;jsessionid=TESTsession123ABC").mock(
-        side_effect=[
-            httpx.Response(200, text=_read_fixture("stuttgart_login_form.html")),
-            httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html")),
-        ],
-    )
+    _mock_session(base_url=fake)
     backend = StuttgartBackend(base_url=fake)
     try:
         assert backend.base_url == fake
@@ -375,9 +431,10 @@ async def test_base_url_override_redirects_all_requests() -> None:
     finally:
         await backend.close()
 
-    assert start.called
-    assert backend._ausleihen_url is not None
-    assert backend._ausleihen_url.startswith(fake)
+    assert backend._login_url is not None
+    assert backend._login_url.startswith(fake)
+    assert backend._ausleihen_nav is not None
+    assert backend._ausleihen_nav[0].startswith(fake)
 
 
 async def test_base_url_defaults_to_the_class_constant() -> None:
@@ -409,50 +466,8 @@ async def test_close_closes_a_client_it_created() -> None:
     assert backend._client.is_closed is True
 
 
-@respx.mock
-async def test_get_loans_off_the_account_page_raises_parse_error() -> None:
-    """Landing back on the search page means the session died, not that
-    nothing is borrowed. Reporting zero loans there would look like every
-    item had been returned."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
-    )
-    backend = StuttgartBackend()
-    try:
-        await backend.login("testuser", "testpass")
-        with pytest.raises(ParseError):
-            await backend.get_loans()
-    finally:
-        await backend.close()
-
-
-@respx.mock
-async def test_get_loans_with_an_empty_result_section_returns_empty() -> None:
-    """A results section without a loan table means the account is empty."""
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_no_loans.html")),
-    )
-    backend = StuttgartBackend()
-    try:
-        await backend.login("testuser", "testpass")
-        assert await backend.get_loans() == []
-    finally:
-        await backend.close()
-
-
-async def test_stuttgart_reports_no_fee_support() -> None:
-    """get_fees() returns [] because fees are not implemented, not because
-    the account has none -- consumers must be able to tell the difference."""
-    assert StuttgartBackend.supports_fees is False
-
-
 async def _fetch_loans() -> list:
-    _mock_login_flow()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session()
     backend = StuttgartBackend()
     try:
         await backend.login("testuser", "testpass")
@@ -514,16 +529,9 @@ async def test_media_row_without_a_publisher() -> None:
 
 # --- catalogue-search covers (recorded pages) ----------------------------
 
-RECORDED = Path(__file__).parent / "fixtures" / "recorded"
-
-
-def _read_recorded(name: str) -> str:
-    return (RECORDED / name).read_text(encoding="utf-8")
-
-
 #: The search response the live OPAC gave for each fixture title -- recorded
 #: verbatim and anonymised like the other recordings. The keys are the titles
-#: as the loan listing spells them, because the router below dispatches on
+#: as the loan listing spells them, because the router above dispatches on
 #: exactly what the backend put into the search box.
 _SEARCH_PAGES = {
     "Die drei Fragezeichen - Folge 220": "stuttgart_search_00.html",
@@ -535,36 +543,12 @@ _SEARCH_PAGES = {
 }
 
 
-def _mock_opac() -> None:
-    """Serve the whole session -- login and every catalogue search -- off the
-    routes the backend walks, dispatching each POST on its posted fields."""
-    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
-    )
-
-    def route(request: httpx.Request) -> httpx.Response:
-        fields = {key: values[0] for key, values in parse_qs(request.content.decode(), keep_blank_values=True).items()}
-        page = _SEARCH_PAGES.get(unquote_plus(fields.get("$Autosuggest", "")))
-        if page is not None:
-            return httpx.Response(200, text=_read_recorded(page))
-        if "$Textfield$0" in fields:
-            return httpx.Response(200, text=_read_fixture("stuttgart_logged_in.html"))
-        if "SUO1_AUTHFU_1_hidden" in fields:
-            return httpx.Response(200, text=_read_fixture("stuttgart_login_form.html"))
-        return httpx.Response(404)
-
-    respx.post(SESSION_URL).mock(side_effect=route)
-
-
 @respx.mock
 async def test_fetch_details_fills_covers_from_the_catalogue_search() -> None:
     """The loan listing carries no image at all: a cover comes from looking
     the title up in the OPAC's catalogue search, whose result rows keep the
     jacket in a lazily-loaded data-src."""
-    _mock_opac()
-    respx.get(url__regex=r".*SBK00000001.*").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_ausleihen.html")),
-    )
+    _mock_session(search=_SEARCH_PAGES)
 
     backend = StuttgartBackend()
     try:
@@ -593,7 +577,7 @@ async def test_fetch_details_fills_covers_from_the_catalogue_search() -> None:
 async def test_fetch_details_reads_a_single_hit_detail_page() -> None:
     """An exact-title search skips the result list: aDIS answers a single hit
     with its Vollanzeige, where the cover sits in the detail block."""
-    _mock_opac()
+    _mock_session(search=_SEARCH_PAGES)
     loan = LoanItem(title="Der Koboldmaki und der große Sturm", item_id="1", due_date=date(2026, 10, 1))
 
     backend = StuttgartBackend()
@@ -610,22 +594,15 @@ async def test_fetch_details_reads_a_single_hit_detail_page() -> None:
 async def test_the_cover_search_asks_the_catalogue_not_the_info_pages() -> None:
     """Without SRCHAW=Katalog the same form searches the website's Infoseiten
     and returns a page with neither rows nor covers."""
-    _mock_opac()
+    _mock_session(search=_SEARCH_PAGES)
     backend = StuttgartBackend()
     try:
         await backend.fetch_details(LoanItem(title="Python Crashkurs", item_id="1", due_date=date(2026, 10, 1)))
     finally:
         await backend.close()
 
-    searches = []
-    for call in respx.calls:
-        if call.request.method != "POST":
-            continue
-        fields = {
-            key: values[0] for key, values in parse_qs(call.request.content.decode(), keep_blank_values=True).items()
-        }
-        if unquote_plus(fields.get("$Autosuggest", "")) == "Python Crashkurs":
-            searches.append(fields)
+    searches = [_fields(call.request) for call in respx.calls if call.request.method == "POST"]
+    searches = [fields for fields in searches if fields.get("$Autosuggest") == "Python Crashkurs"]
     assert searches, "fetch_details ran no catalogue search"
     for fields in searches:
         assert fields.get("SRCHAW") == "Katalog"
@@ -636,10 +613,7 @@ async def test_a_search_page_about_another_query_yields_no_cover() -> None:
     """aDIS keeps the previous result set in the session and hands it back
     when queried too fast. A detail page echoing a different query is not
     about this loan, and its cover is the wrong image."""
-    _mock_opac()
-    respx.post(SESSION_URL).mock(
-        return_value=httpx.Response(200, text=_read_recorded("stuttgart_search_05.html")),
-    )
+    _mock_session(search=_SEARCH_PAGES, unknown_search="stuttgart_search_05.html")
     loan = LoanItem(title="Ein ganz anderes Buch", item_id="1", due_date=date(2026, 10, 1))
 
     backend = StuttgartBackend()
@@ -656,7 +630,7 @@ async def test_a_failing_cover_search_leaves_the_loan_untouched() -> None:
     """One title's lookup must never fail the whole refresh: the sensor still
     has a loan listing to show."""
     respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
-        return_value=httpx.Response(200, text=_read_fixture("stuttgart_home.html")),
+        return_value=_page("stuttgart_home.html"),
     )
     respx.post(SESSION_URL).mock(side_effect=httpx.ConnectError("connection refused"))
 
