@@ -9,5 +9,5 @@
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/makefu/ha_stadtbibliothek/issues",
     "requirements": ["httpx", "beautifulsoup4", "html5lib", "lxml"],
-    "version": "1.4.0"
+    "version": "1.4.1"
 }
