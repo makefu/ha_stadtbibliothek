@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ha-stadtbibliothek"
-version = "1.4.2"
+version = "1.4.3"
 requires-python = ">=3.13"
 dependencies = [
     "httpx",
@@ -35,3 +35,6 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "keep_pacing: do not zero the backends' REQUEST_MIN_INTERVAL for this test",
+]

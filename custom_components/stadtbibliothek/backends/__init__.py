@@ -18,6 +18,7 @@ from .base import (
     LibraryBackend,
     LibraryType,
     LoanItem,
+    RateLimitedError,
     RenewalError,
 )
 from .remseck import RemseckBackend
@@ -68,7 +69,7 @@ __all__ = [
     "LibraryBackend",
     "LibraryType",
     "LoanItem",
-    "RemseckBackend",
+    "RateLimitedError",
     "RenewalError",
     "StuttgartBackend",
     "available_backends",

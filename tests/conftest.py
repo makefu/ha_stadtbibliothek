@@ -238,6 +238,22 @@ from custom_components.stadtbibliothek.backends.base import (  # noqa: E402
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_pacing(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests assert on request sequences, not on waiting.
+
+    Each backend overrides REQUEST_MIN_INTERVAL on itself, so every class
+    must be patched, not just the base. A test marked keep_pacing opts out to
+    assert on the production interval.
+    """
+    if request.node.get_closest_marker("keep_pacing"):
+        return
+    from custom_components.stadtbibliothek.backends import BACKENDS
+
+    for backend_cls in BACKENDS.values():
+        monkeypatch.setattr(backend_cls, "REQUEST_MIN_INTERVAL", 0.0)
+
+
 @pytest.fixture
 def sample_loans() -> list[LoanItem]:
     return [

@@ -12,6 +12,7 @@ from custom_components.stadtbibliothek.backends.base import (
     AuthenticationError,
     LoanItem,
     ParseError,
+    RateLimitedError,
     RenewalError,
 )
 from custom_components.stadtbibliothek.backends.stuttgart import StuttgartBackend
@@ -666,3 +667,45 @@ def test_bare_title_drops_subtitle_and_brackets() -> None:
         "Der Ernst des Lebens"
     )
     assert StuttgartBackend._bare_title("An und aus, wie geht das? [CD]") == "An und aus, wie geht das?"
+
+
+@respx.mock
+async def test_a_blocked_start_page_raises_rate_limited() -> None:
+    """The firewall answers our first request with 403; that must surface as
+    RateLimitedError so the poller can back off, not as a generic HTTP error."""
+    respx.get(f"{BASE_URL}?service=direct/0/Home/$DirectLink&sp=SOPAC").mock(
+        return_value=httpx.Response(403, text="<html>Request forbidden by administrative rules.</html>")
+    )
+    backend = StuttgartBackend()
+    try:
+        with pytest.raises(RateLimitedError) as excinfo:
+            await backend.login("testuser", "testpass")
+    finally:
+        await backend.close()
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.url.startswith(BASE_URL)
+
+
+@respx.mock
+async def test_repeated_titles_are_searched_once() -> None:
+    _mock_session(search=_SEARCH_PAGES)
+
+    backend = StuttgartBackend()
+    try:
+        first = await backend.fetch_details(LoanItem(title="Der kleine Prinz", item_id="1", due_date=date(2026, 10, 1)))
+        after_first = respx.calls.call_count
+        second = await backend.fetch_details(
+            LoanItem(title="Der kleine Prinz", item_id="2", due_date=date(2026, 10, 1))
+        )
+    finally:
+        await backend.close()
+
+    assert first.cover_url and second.cover_url == first.cover_url
+    assert respx.calls.call_count == after_first
+
+
+@pytest.mark.keep_pacing
+def test_stuttgart_paces_its_requests() -> None:
+    """The live block was provoked by a burst of logins inside twenty
+    seconds; one second between requests keeps a poll a crawl."""
+    assert StuttgartBackend.REQUEST_MIN_INTERVAL >= 1.0

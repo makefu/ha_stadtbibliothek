@@ -1,6 +1,32 @@
 # Changelog
 
 
+## v1.4.3
+
+### Rate limiting: pacing, an identifiable block, per-backend headers
+
+- The Stuttgart aDIS sits behind a firewall that counts a burst of form
+  walks as bot traffic and then answers `403 Request forbidden by
+  administrative rules` for hours. A poll with cover lookups made a dozen
+  logins and two requests per loan within seconds, which is what provoked
+  the block. Every request now goes through a shared `LibraryBackend._request`
+  helper that enforces a minimum gap per backend
+  (`REQUEST_MIN_INTERVAL`: 1.0 s Stuttgart, 0.2 s Remseck), so a full poll
+  reads as one patient user.
+- A 403/429 raises `RateLimitedError` (with `url`, `status_code`,
+  `retry_after` from `Retry-After`) instead of a generic `httpx` error, so
+  consumers can tell "back off for hours" from "the cable is unplugged" and
+  schedule an exponential back-off on it. Every failed request is logged at
+  warning with method, URL, status and a snippet of the body naming the
+  blocker.
+- `CLIENT_HEADERS` now apply per request, not only to a client the backend
+  opened itself. A consumer that shares one `httpx.AsyncClient` across
+  accounts used to send its generic identity to aDIS; the firewall decides
+  by request headers, so the browser headers ride along regardless of who
+  owns the connection pool.
+- Stuttgart caches catalogue covers by normalised title within a session,
+  so repeated exemplars of one title cost one search, not one per loan.
+
 ## v1.4.2
 
 ### Stuttgart login works against the current aDIS again

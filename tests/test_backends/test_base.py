@@ -1,14 +1,40 @@
 from datetime import date
-from typing import Any
+from typing import Any, ClassVar
 
+import httpx
+import pytest
+import respx
 from freezegun import freeze_time
 
 from custom_components.stadtbibliothek.backends.base import (
     AccountInfo,
     FeeItem,
+    LibraryBackend,
     LibraryType,
     LoanItem,
+    RateLimitedError,
 )
+
+
+class _Dummy(LibraryBackend):
+    """The smallest backend that can issue requests."""
+
+    library_type = LibraryType.STUTTGART
+    BASE_URL = "https://dummy.example"
+
+    async def login(self, username: str, password: str) -> None: ...
+
+    async def get_loans(self) -> list[LoanItem]:
+        return []
+
+    async def get_fees(self) -> list[FeeItem]:
+        return []
+
+    async def renew_loan(self, item_id: str) -> bool:
+        return False
+
+    async def renew_all(self, days_remaining_threshold: int = 14) -> int:
+        return 0
 
 
 def _make_loan(
@@ -65,3 +91,99 @@ def test_account_info_defaults():
     assert account.loans == []
     assert account.fees == []
     assert account.total_fees == 0.0
+
+
+# --- paced requests ---------------------------------------------------------
+
+
+@respx.mock
+async def test_a_403_raises_rate_limited_not_http_status() -> None:
+    """A firewall block must be tellable from a dead link: bib-tracker backs
+    off on RateLimitedError, and every other network error on the poll."""
+    respx.get("https://dummy.example/").mock(
+        return_value=httpx.Response(403, text="<html>Request forbidden by administrative rules.</html>")
+    )
+    backend = _Dummy()
+    try:
+        with pytest.raises(RateLimitedError) as excinfo:
+            await backend._get("https://dummy.example/")
+    finally:
+        await backend.close()
+    assert excinfo.value.status_code == 403
+    assert "administrative rules" in str(excinfo.value)
+
+
+@respx.mock
+async def test_a_429_reports_the_retry_after_hint() -> None:
+    respx.get("https://dummy.example/").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "120"}, text="slow down")
+    )
+    backend = _Dummy()
+    try:
+        with pytest.raises(RateLimitedError) as excinfo:
+            await backend._get("https://dummy.example/")
+    finally:
+        await backend.close()
+    assert excinfo.value.retry_after == 120.0
+
+
+@respx.mock
+async def test_a_rate_limit_raises_even_when_the_caller_checks_status() -> None:
+    """check=False means "I handle 4xx myself" -- a block is still not a page."""
+    respx.post("https://dummy.example/").mock(return_value=httpx.Response(403, text="nope"))
+    backend = _Dummy()
+    try:
+        with pytest.raises(RateLimitedError):
+            await backend._post("https://dummy.example/", check=False, data={"a": "b"})
+    finally:
+        await backend.close()
+
+
+@respx.mock
+async def test_client_headers_apply_to_a_borrowed_client() -> None:
+    """The firewall decides by request headers; a shared client's generic
+    identity must not leak into requests to an OPAC that expects a browser."""
+
+    class _Browserish(_Dummy):
+        CLIENT_HEADERS: ClassVar[dict[str, str]] = {"User-Agent": "Mozilla/5.0 browserlike"}
+
+    route = respx.get("https://dummy.example/").mock(return_value=httpx.Response(200, text="ok"))
+    client = httpx.AsyncClient()
+    backend = _Browserish(client=client)
+    try:
+        await backend._get("https://dummy.example/")
+    finally:
+        await backend.close()
+        await client.aclose()
+    assert route.calls[-1].request.headers["User-Agent"] == "Mozilla/5.0 browserlike"
+
+
+@respx.mock
+async def test_pacing_spaces_requests_of_one_backend() -> None:
+    import time
+
+    respx.get("https://dummy.example/").mock(return_value=httpx.Response(200, text="ok"))
+    backend = _Dummy()
+    backend.REQUEST_MIN_INTERVAL = 0.05
+    try:
+        started = time.monotonic()
+        for _ in range(3):
+            await backend._get("https://dummy.example/")
+        elapsed = time.monotonic() - started
+    finally:
+        await backend.close()
+    # Two gaps of at least the interval; slack for scheduling, not for absent
+    # pacing (which would return near-instantly).
+    assert elapsed >= 0.09
+
+
+@respx.mock
+async def test_a_plain_http_error_still_raises_for_status() -> None:
+    """Only 403/429 are reclassified; a 500 keeps raise_for_status semantics."""
+    respx.get("https://dummy.example/").mock(return_value=httpx.Response(500, text="boom"))
+    backend = _Dummy()
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            await backend._get("https://dummy.example/")
+    finally:
+        await backend.close()

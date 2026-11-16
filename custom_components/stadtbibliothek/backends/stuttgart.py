@@ -41,6 +41,11 @@ class StuttgartBackend(LibraryBackend):
 
     CLIENT_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:129.0) Gecko/20100101 Firefox/129.0"}
 
+    #: aDIS sits behind a firewall that counts a burst of form walks as bot
+    #: traffic and then answers 403 for hours. A poll with cover lookups makes
+    #: a couple of dozen requests; one second apart reads as one patient user.
+    REQUEST_MIN_INTERVAL = 1.0
+
     #: The label of the button that renews the ticked loans. aDIS renamed the
     #: submit fields behind its labels (``textButton`` -> ``$Button``) without
     #: changing the labels, so the click is resolved by label at runtime.
@@ -65,6 +70,10 @@ class StuttgartBackend(LibraryBackend):
         #: The Ausleihen page fetched by login(), parsed once by get_loans().
         self._loans_page: BeautifulSoup | None = None
         self._credentials: tuple[str, str] | None = None
+        #: Catalogue covers already looked up in this session, by normalised
+        #: title. A poll re-searches repeated titles otherwise, and each
+        #: search is two requests through the firewall.
+        self._cover_cache: dict[str, str | None] = {}
 
     async def login(self, username: str, password: str) -> None:
         self._credentials = (username, password)
@@ -107,8 +116,7 @@ class StuttgartBackend(LibraryBackend):
             raise RuntimeError("Must call login() first")
         username, password = self._credentials
 
-        resp = await self._client.get(f"{self.base_url}{self.START_PATH}")
-        resp.raise_for_status()
+        resp = await self._get(f"{self.base_url}{self.START_PATH}")
         form = BeautifulSoup(resp.text, features="html.parser").find("form")
         if not isinstance(form, Tag):
             raise AuthenticationError("No form found on start page")
@@ -149,8 +157,7 @@ class StuttgartBackend(LibraryBackend):
             self._ausleihen_nav = None
             resp = await self._post_form(url, fields)
         elif self._ausleihen_url is not None:
-            resp = await self._client.get(self._ausleihen_url)
-            resp.raise_for_status()
+            resp = await self._get(self._ausleihen_url)
         else:
             raise RuntimeError("Must call login() before fetching loans")
         return BeautifulSoup(resp.text, features="html.parser")
@@ -237,6 +244,11 @@ class StuttgartBackend(LibraryBackend):
         cover_url None. A title the catalogue has no image for must not fail
         the whole refresh.
         """
+        cached = self._cover_cache.get(self._norm_title(loan.title))
+        if cached is not None:
+            if cached:
+                loan.cover_url = cached
+            return loan
         try:
             cover = await self._search_cover(loan.title)
             if cover is None:
@@ -246,6 +258,7 @@ class StuttgartBackend(LibraryBackend):
                 cover = await self._search_cover(self._bare_title(loan.title))
         except httpx.HTTPError:
             return loan
+        self._cover_cache[self._norm_title(loan.title)] = cover or ""
         if cover:
             loan.cover_url = cover
         return loan
@@ -255,8 +268,7 @@ class StuttgartBackend(LibraryBackend):
         # A fresh search mask per query. aDIS keeps the previous result set in
         # the session: reusing one mask for several queries hands back the
         # earlier query's results, unchanged, as often as not.
-        mask = await self._client.get(f"{self.base_url}{self.START_PATH}")
-        mask.raise_for_status()
+        mask = await self._get(f"{self.base_url}{self.START_PATH}")
         form = self._find_search_form(BeautifulSoup(mask.text, features="html.parser"))
         if form is None:
             return None
@@ -487,9 +499,11 @@ class StuttgartBackend(LibraryBackend):
         return False
 
     async def _post_form(self, url: str, data: dict[str, str]) -> httpx.Response:
-        resp = await self._client.post(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-        resp.raise_for_status()
-        return resp
+        return await self._post(
+            url,
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
 
     @staticmethod
     def _js_link_code(soup: BeautifulSoup, link: Tag) -> str | None:

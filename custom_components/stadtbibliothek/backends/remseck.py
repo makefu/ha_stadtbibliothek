@@ -36,6 +36,10 @@ class RemseckBackend(LibraryBackend):
     NO_COVER_MARKER = "no-image"
     supports_details = True
 
+    #: Koha/LMSCloud has no firewall of note, but a poll with detail pages is
+    #: a dozen quick requests; a light pause keeps it a polite crawl.
+    REQUEST_MIN_INTERVAL = 0.2
+
     def __init__(
         self,
         client: httpx.AsyncClient | None = None,
@@ -46,7 +50,7 @@ class RemseckBackend(LibraryBackend):
         self._borrowernumber: str | None = None
 
     async def login(self, username: str, password: str) -> None:
-        resp = await self._client.post(
+        resp = await self._post(
             f"{self.base_url}/cgi-bin/koha/opac-user.pl",
             data={
                 "userid": username,
@@ -54,7 +58,6 @@ class RemseckBackend(LibraryBackend):
                 "koha_login_context": "opac",
             },
         )
-        resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, "lxml")
         # If the login form is still present, authentication failed
@@ -62,10 +65,7 @@ class RemseckBackend(LibraryBackend):
             raise AuthenticationError("Login failed: invalid credentials")
 
     async def get_loans(self) -> list[LoanItem]:
-        resp = await self._client.get(
-            f"{self.base_url}/cgi-bin/koha/opac-user.pl",
-        )
-        resp.raise_for_status()
+        resp = await self._get(f"{self.base_url}/cgi-bin/koha/opac-user.pl")
 
         soup = BeautifulSoup(resp.text, "lxml")
 
@@ -88,10 +88,7 @@ class RemseckBackend(LibraryBackend):
         return [self._parse_loan_row(row) for row in table.select("tbody tr")]
 
     async def get_fees(self) -> list[FeeItem]:
-        resp = await self._client.get(
-            f"{self.base_url}/cgi-bin/koha/opac-account.pl",
-        )
-        resp.raise_for_status()
+        resp = await self._get(f"{self.base_url}/cgi-bin/koha/opac-account.pl")
 
         soup = BeautifulSoup(resp.text, "lxml")
         self._require_logged_in(soup)
@@ -124,8 +121,9 @@ class RemseckBackend(LibraryBackend):
         if not self._borrowernumber:
             return False
 
-        resp = await self._client.post(
+        resp = await self._post(
             f"{self.base_url}/cgi-bin/koha/opac-renew.pl",
+            check=False,
             data={
                 "item": item_id,
                 "borrowernumber": self._borrowernumber,
@@ -152,8 +150,7 @@ class RemseckBackend(LibraryBackend):
         if not loan.detail_url:
             return loan
 
-        resp = await self._client.get(loan.detail_url)
-        resp.raise_for_status()
+        resp = await self._get(loan.detail_url)
         soup = BeautifulSoup(resp.text, "lxml")
 
         isbn = _first_text(soup, 'span[property="isbn"]')
